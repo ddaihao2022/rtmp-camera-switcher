@@ -1,0 +1,81 @@
+{
+  "name": "rtmp-camera-system",
+  "version": "1.0.0",
+  "description": "RTMP多摄影设备管理系统(支持桌面端 + HDMI 输出切换)",
+  "main": "electron/main.js",
+  "scripts": {
+    "server": "node server/index.js",
+    "client": "cd client && npm run dev",
+    "build:client": "cd client && npm run build",
+    "electron": "electron .",
+    "dev": "concurrently -k -n SERVER,CLIENT,APP -c blue,green,magenta \"npm:server\" \"npm:client\" \"wait-on http://localhost:5173 && npm run electron\"",
+    "build": "npm run build:client && electron-builder",
+    "build:dir": "npm run build:client && electron-builder --dir",
+    "install-all": "npm install && cd client && npm install"
+  },
+  "keywords": [
+    "rtmp",
+    "camera",
+    "streaming",
+    "electron",
+    "hdmi"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "node-media-server": "^4.2.4",
+    "socket.io": "^4.6.1"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.rtmp.camera.switcher",
+    "productName": "RTMP Camera Switcher",
+    "directories": {
+      "output": "dist_electron"
+    },
+    "files": [
+      "electron/**/*",
+      "server/**/*",
+      "client/dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "media",
+        "to": "media",
+        "filter": [
+          ".gitkeep"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "RTMP Camera Switcher"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

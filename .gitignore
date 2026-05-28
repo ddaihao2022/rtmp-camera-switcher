@@ -1,0 +1,8 @@
+node_modules/
+dist/
+client/dist/
+dist_electron/
+media/
+*.log
+.DS_Store
+.env
