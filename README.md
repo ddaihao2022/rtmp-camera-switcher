@@ -1,108 +1,202 @@
-# RTMP 多摄影设备管理系统
+# RTMP Camera Switcher
 
-桌面级 RTMP 多路视频切换台,支持把任意一路画面推到 HDMI 显示器全屏输出。
+<p align="center">
+  <img src="https://img.shields.io/badge/version-1.0.0-blue" />
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" />
+  <img src="https://img.shields.io/badge/license-GPL--3.0-green" />
+  <img src="https://img.shields.io/badge/electron-31-47848F" />
+</p>
 
-## 系统架构
+A desktop multi-camera RTMP management system built with Electron + React. Manage multiple live streams, switch outputs to HDMI displays, mix audio, add watermarks, and record — all from a single interface.
 
-- **RTMP 服务器**:基于 `node-media-server`,接收摄影/OBS 推流
-- **HTTP-FLV / WebSocket**:低延迟分发到浏览器/桌面端
-- **API + Socket.io**:Express 提供流列表、输出选择 API,实时推送状态
-- **桌面端 (Electron)**:整合服务与界面,支持双窗口
-  - 主控窗口:多路画面预览、设备列表、输出切换
-  - HDMI 输出窗口:在指定显示器全屏显示当前选中画面
-- **前端 (React + Vite)**:`flv.js` 解码低延迟直播流
+> Copyright © 2024 ddaihao2022. All rights reserved.  
+> This software has been registered for software copyright (软件著作权).
 
-## 功能
+---
 
-- 多台摄影设备同时推流并实时预览
-- 单屏 / 网格视图、单路全屏播放
-- 任意流选为「主输出」,所有终端实时同步
-- HDMI 输出窗口独占第二显示器,主控切换时无缝切流
-- 多显示器自动检测,支持热插拔
+## Screenshots
 
-## 端口
+| Main Control | Audio Mixer | HDMI Output |
+|---|---|---|
+| Multi-stream preview, device list, output selection | Per-channel VU meters, faders, mute | Full-screen output on secondary display |
 
-| 服务 | 端口 |
-| --- | --- |
-| RTMP 推流 | 1935 |
+---
+
+## Features
+
+- **Multi-stream preview** — Watch all RTMP sources simultaneously in grid or single view
+- **HDMI output switching** — Send any stream to a secondary display in fullscreen, switch in real time
+- **Audio mixer** — Dedicated mixer window with VU meters, frequency spectrum, per-channel volume and mute
+- **Local media import** — Import local video/audio files as virtual sources; play and switch to output just like live streams
+- **Watermark overlay** — Text or image watermark on the output, configurable position, opacity, size
+- **Output recording** — Record the current output stream to WebM using the browser's MediaRecorder API
+- **Number key switching** — Press `1`–`9` to instantly switch the output source; `Shift+1`–`9` for preview only
+- **Settings panel** — Centralized settings modal for HDMI, watermark, and debug log
+- **Debug log window** — Live log viewer with keyword filter, auto-scroll, and file export
+- **Low-latency playback** — GOP cache bypass + buffer catch-up for sub-second latency
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────┐
+│              Electron Main              │
+│  ┌──────────┐  ┌──────────┐  ┌───────┐ │
+│  │ Control  │  │  HDMI    │  │ Audio │ │
+│  │ Window   │  │  Output  │  │ Mixer │ │
+│  │ (React)  │  │ (React)  │  │ Win   │ │
+│  └──────────┘  └──────────┘  └───────┘ │
+└─────────────────────────────────────────┘
+         │ IPC / Socket.io
+┌─────────────────────────────────────────┐
+│            Node.js Server               │
+│  ┌─────────────────┐  ┌──────────────┐ │
+│  │ node-media-server│  │ Express API  │ │
+│  │  RTMP :1935      │  │  + Socket.io │ │
+│  │  HTTP-FLV :8000  │  │  :3001       │ │
+│  └─────────────────┘  └──────────────┘ │
+└─────────────────────────────────────────┘
+         ↑ RTMP push
+  OBS / cameras / encoders
+```
+
+| Service | Port |
+|---|---|
+| RTMP ingest | 1935 |
 | HTTP-FLV / WebSocket | 8000 |
 | API + Socket.io | 3001 |
-| Vite 开发服务 | 5173 |
+| Vite dev server | 5173 |
 
-## 快速开始
+---
 
-### 安装依赖
+## Quick Start
+
+### Prerequisites
+
+- Node.js 18+
+- npm 9+
+
+### Install dependencies
 
 ```bash
 npm run install-all
 ```
 
-如果在国内下载 Electron 二进制慢/失败:
+> **Slow Electron download in China?**
+> ```powershell
+> $env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
+> npm install
+> ```
 
-```bash
-# Windows PowerShell
-$env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
-npm install
-```
-
-### 开发模式(带热更新)
+### Development (with hot reload)
 
 ```bash
 npm run dev
 ```
 
-会同时启动:
-- 后端服务(SERVER)
-- Vite 开发服务(CLIENT)
-- Electron 桌面应用(APP)
+Starts the backend server, Vite dev server, and Electron app concurrently.
 
-### 仅启动后端 + 浏览器调试
-
-```bash
-npm run server      # 终端 A
-npm run client      # 终端 B,访问 http://localhost:5173
-```
-
-## 编译打包(生成可安装软件)
+### Build installer
 
 ```bash
 npm run build
 ```
 
-产物在 `dist_electron/`:
-- Windows: `RTMP Camera Switcher Setup x.x.x.exe`(NSIS 安装包)
-- macOS: `.dmg`
-- Linux: `.AppImage`
+Output in `dist_electron/`:
+- **Windows**: `RTMP Camera Switcher Setup 1.0.0.exe` (NSIS installer)
+- **macOS**: `.dmg`
+- **Linux**: `.AppImage`
 
-只想跑一次看效果(不打安装包):
+Quick test without packaging:
 
 ```bash
 npm run build:dir
+# Executable: dist_electron/win-unpacked/RTMP Camera Switcher.exe
 ```
 
-可执行文件会在 `dist_electron/win-unpacked/RTMP Camera Switcher.exe`。
+---
 
-## 推流地址
+## Usage
+
+### Streaming setup (OBS example)
 
 ```
-rtmp://<本机IP>:1935/live/<设备名>
+Server:     rtmp://<your-LAN-IP>:1935/live
+Stream Key: camera1
 ```
 
-例如 OBS 中:
-- 服务器: `rtmp://localhost:1935/live`
-- 串流密钥: `camera1`
+The app auto-detects your LAN IP and shows the full push URL in the sidebar.
 
-## HDMI 输出工作流
+### HDMI output workflow
 
-1. 启动桌面应用,把第二块显示器接 HDMI
-2. 推流上线后在主控窗口左侧设备列表中看到设备
-3. 点击设备右侧 📡 图标选为「主输出」
-4. 在侧边栏「HDMI 输出」面板下拉选中外接显示器,点 ▶ 开启输出
-5. 在外接显示器上会自动全屏播放当前主输出
-6. 之后切换主输出,HDMI 窗口实时跟随,无需操作输出端
+1. Connect a second display via HDMI
+2. Start the app and push streams from your cameras/OBS
+3. Click the 📡 button next to a stream to set it as the main output
+4. In the **HDMI Output** panel, select the target display and click **▶ Start Output**
+5. The output window opens fullscreen on the selected display
+6. Switch output anytime — the HDMI window follows instantly
 
-## 注意事项
+### Keyboard shortcuts
 
-- 中继转码功能依赖 `ffmpeg`,可选;不安装不影响 RTMP 收流和 HTTP-FLV 播放
-- 输出窗口为全屏无边框,按 `Alt+F4` 或在主控点「关闭输出」退出
-- 浏览器自动播放被阻止时,首次需点击画面上的播放按钮
+| Key | Action |
+|---|---|
+| `1` – `9` | Switch output to stream N (also updates preview) |
+| `Shift+1` – `9` | Preview stream N without changing output |
+| `Ctrl+Shift+A` | Open audio mixer window |
+| `Ctrl+Shift+L` | Toggle verbose logging |
+| `Ctrl+Shift+D` | Open log viewer window |
+
+### Audio mixer
+
+Open via the **🎚 Audio Mixer** button in the header or `Ctrl+Shift+A`.  
+Each active stream gets its own channel strip with:
+- Frequency spectrum visualizer
+- VU meter with peak hold
+- Vertical fader (0–150%)
+- Per-channel mute
+
+Volume/mute state syncs across all windows via Socket.io.
+
+### Local media
+
+Click **+ Add** in the **Local Media** section to import video or audio files.  
+Imported files appear in the source list and can be selected as output just like live streams.
+
+### Recording
+
+Select an output stream first, then use the **⏺ Record Output** panel in the sidebar.  
+Recordings are saved as `.webm` via a system save dialog.
+
+### Watermark
+
+Open **⚙️ Settings** → **Watermark**.  
+Supports text (custom font size, color) or image (PNG/JPG), with position, opacity, and padding controls.  
+Changes apply to the HDMI output window in real time.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Desktop shell | Electron 31 |
+| Frontend | React 18 + Vite 5 |
+| Streaming | node-media-server v4 |
+| FLV playback | flv.js 1.6 |
+| Realtime sync | Socket.io 4 |
+| HTTP API | Express 4 |
+| Audio processing | Web Audio API |
+| Recording | MediaRecorder API |
+
+---
+
+## License
+
+This project is licensed under the **GNU General Public License v3.0**.  
+See [LICENSE](./LICENSE) for the full text.
+
+Copyright © 2024 ddaihao2022. Software copyright registered.  
+You may use, study, and modify this software under the terms of GPL-3.0.  
+Any derivative work must also be distributed under GPL-3.0.  
+**Commercial use without written permission from the copyright holder is not permitted.**
