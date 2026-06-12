@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>日志输出</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d0d0d;
+    color: #d4d4d4;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  #toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: #1a1a1a;
+    border-bottom: 1px solid #333;
+    flex-shrink: 0;
+  }
+  #toolbar span { color: #888; font-size: 12px; }
+  #toolbar .title { color: #ccc; font-weight: bold; flex: 1; }
+  button {
+    padding: 3px 10px;
+    border: 1px solid #444;
+    background: #252525;
+    color: #ccc;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  button:hover { background: #333; }
+  #filter {
+    padding: 3px 8px;
+    background: #1e1e1e;
+    border: 1px solid #444;
+    color: #ccc;
+    border-radius: 3px;
+    font-size: 12px;
+    width: 160px;
+  }
+  #log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+  }
+  .line {
+    display: flex;
+    gap: 8px;
+    padding: 1px 0;
+    border-bottom: 1px solid #161616;
+    line-height: 1.6;
+    word-break: break-all;
+    white-space: pre-wrap;
+  }
+  .line:hover { background: #1a1a1a; }
+  .ts { color: #555; flex-shrink: 0; font-size: 11px; padding-top: 2px; }
+  .msg { flex: 1; }
+  .line.info  .msg { color: #d4d4d4; }
+  .line.verbose .msg { color: #7ec8e3; }
+  .line.debug .msg { color: #9a9a9a; }
+  .line.warn  .msg { color: #e5c07b; }
+  .line.error .msg { color: #e06c75; }
+  #status {
+    padding: 4px 12px;
+    background: #111;
+    border-top: 1px solid #222;
+    font-size: 11px;
+    color: #555;
+    flex-shrink: 0;
+  }
+  #status .dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #4ec94e;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <span class="title">📋 日志输出</span>
+  <input id="filter" placeholder="过滤关键词..." oninput="applyFilter()" />
+  <button onclick="clearLog()">清空</button>
+  <button onclick="toggleScroll()">自动滚动: <span id="scrollLabel">开</span></button>
+  <button onclick="window.logAPI.openLogFile()">打开日志文件</button>
+</div>
+<div id="log"></div>
+<div id="status"><span class="dot"></span><span id="statusText">等待日志...</span></div>
+
+<script>
+  let autoScroll = true;
+  let total = 0;
+  let filterText = '';
+  const logEl = document.getElementById('log');
+
+  function toggleScroll() {
+    autoScroll = !autoScroll;
+    document.getElementById('scrollLabel').textContent = autoScroll ? '开' : '关';
+  }
+
+  function clearLog() {
+    logEl.innerHTML = '';
+    total = 0;
+    updateStatus();
+  }
+
+  function applyFilter() {
+    filterText = document.getElementById('filter').value.toLowerCase();
+    const lines = logEl.querySelectorAll('.line');
+    lines.forEach(el => {
+      el.style.display = (!filterText || el.dataset.msg.toLowerCase().includes(filterText)) ? '' : 'none';
+    });
+  }
+
+  function updateStatus() {
+    document.getElementById('statusText').textContent = `共 ${total} 条日志`;
+  }
+
+  function classifyLevel(msg) {
+    if (msg.includes('[DEBUG]')) return 'debug';
+    if (msg.includes('[VERBOSE]')) return 'verbose';
+    if (msg.includes('[WARN]') || msg.includes('warn')) return 'warn';
+    if (msg.includes('[ERROR]') || msg.includes('error') || msg.includes('Error')) return 'error';
+    return 'info';
+  }
+
+  function appendLine(text, ts) {
+    const level = classifyLevel(text);
+    const div = document.createElement('div');
+    div.className = `line ${level}`;
+    div.dataset.msg = text;
+
+    const tsEl = document.createElement('span');
+    tsEl.className = 'ts';
+    tsEl.textContent = ts;
+
+    const msgEl = document.createElement('span');
+    msgEl.className = 'msg';
+    msgEl.textContent = text;
+
+    div.appendChild(tsEl);
+    div.appendChild(msgEl);
+
+    if (filterText && !text.toLowerCase().includes(filterText)) {
+      div.style.display = 'none';
+    }
+
+    logEl.appendChild(div);
+    total++;
+    updateStatus();
+
+    if (autoScroll) {
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  }
+
+  // 接收主进程推送的日志
+  window.logAPI.onLogLine((line) => {
+    const now = new Date();
+    const ts = now.toTimeString().slice(0, 8);
+    appendLine(line, ts);
+  });
+</script>
+</body>
+</html>

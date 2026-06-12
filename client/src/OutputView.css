@@ -1,4 +1,6 @@
-html, body, #root {
+/* 仅在输出视图下隐藏滚动与鼠标,避免全局污染主控窗口 */
+body.output-mode,
+body.output-mode #root {
   margin: 0;
   padding: 0;
   height: 100%;
@@ -15,6 +17,7 @@ html, body, #root {
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: none;
 }
 
 .output-video {
@@ -44,4 +47,23 @@ html, body, #root {
 
 .output-msg.error {
   color: #ef4444;
+}
+
+.output-audio-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  color: #aaa;
+}
+
+.output-audio-label {
+  font-size: 1.4rem;
+  color: #ccc;
+}
+
+.output-audio {
+  width: 480px;
+  max-width: 90vw;
 }

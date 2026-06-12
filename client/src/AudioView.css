@@ -1,0 +1,275 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #0a0a0a;
+  color: #d4d4d4;
+  font-family: 'Consolas', 'Segoe UI', monospace;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.audio-view {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #0a0a0a;
+}
+
+/* 顶部标题 */
+.av-header {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  background: #111;
+  border-bottom: 1px solid #1e1e1e;
+  flex-shrink: 0;
+}
+
+.av-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e5e5e5;
+  letter-spacing: 0.05em;
+}
+
+.av-sub {
+  font-size: 0.78rem;
+  color: #555;
+}
+
+/* 空状态 */
+.av-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #444;
+  gap: 0.5rem;
+  font-size: 1rem;
+}
+
+.av-hint { font-size: 0.85rem; color: #333; }
+
+/* 轨道容器：横排，允许滚动 */
+.av-channels {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 1rem;
+  gap: 6px;
+}
+
+.av-channels::-webkit-scrollbar { height: 6px; }
+.av-channels::-webkit-scrollbar-track { background: #111; }
+.av-channels::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+/* 底部状态栏 */
+.av-footer {
+  padding: 0.5rem 1.25rem;
+  background: #0d1a14;
+  border-top: 1px solid #1e3428;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.av-out-label {
+  font-size: 0.72rem;
+  color: #10b981;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.av-out-key {
+  font-size: 0.85rem;
+  color: #6ee7b7;
+}
+
+/* ─── 单路音频条（竖向调音台风格） ─── */
+.ch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100px;
+  min-width: 90px;
+  flex-shrink: 0;
+  background: #141414;
+  border: 1px solid #222;
+  border-radius: 8px;
+  padding: 0.75rem 0.5rem 0.6rem;
+  gap: 0.45rem;
+  transition: border-color 0.2s;
+}
+
+.ch--out {
+  border-color: #10b981;
+  background: #0d1a14;
+  box-shadow: 0 0 10px rgba(16,185,129,0.12);
+}
+
+.ch--muted { opacity: 0.5; }
+
+/* 标题行 */
+.ch-title {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: 100%;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.ch-out-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 5px #10b981;
+  flex-shrink: 0;
+  animation: blink 1.4s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+}
+
+.ch-name {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #bbb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 70px;
+}
+
+.ch-loading {
+  font-size: 0.6rem;
+  color: #f59e0b;
+  animation: blink 0.8s infinite;
+}
+
+/* 频谱 */
+.ch-spectrum {
+  width: 100%;
+  height: 36px;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  background: #0a0a0a;
+  border-radius: 4px;
+  padding: 2px;
+  overflow: hidden;
+}
+
+.ch-spec-bar {
+  flex: 1;
+  background: linear-gradient(to top, #667eea, #764ba2);
+  border-radius: 1px;
+  min-height: 1px;
+  transition: height 0.04s linear;
+}
+
+/* VU 条 */
+.ch-vu {
+  position: relative;
+  width: 100%;
+  height: 5px;
+  background: #1a1a1a;
+  border-radius: 3px;
+  overflow: visible;
+}
+
+.ch-vu-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.04s linear, background 0.1s;
+  min-width: 2px;
+}
+
+.ch-vu-peak {
+  position: absolute;
+  top: -1px;
+  width: 2px; height: 7px;
+  background: rgba(255,255,255,0.85);
+  border-radius: 1px;
+  transform: translateX(-1px);
+}
+
+.ch-db {
+  font-size: 0.65rem;
+  color: #555;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 竖向滑块 */
+.ch-fader-wrap {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex: 1;
+  width: 100%;
+  justify-content: center;
+}
+
+.ch-fader {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  width: 28px;
+  height: 120px;
+  cursor: pointer;
+  accent-color: #667eea;
+}
+
+.ch-fader:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.ch-fader-marks {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 120px;
+  font-size: 0.58rem;
+  color: #444;
+  padding: 2px 0;
+  line-height: 1;
+}
+
+/* 音量数值 */
+.ch-vol-val {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #aaa;
+  font-variant-numeric: tabular-nums;
+  min-height: 1em;
+}
+
+/* 静音按钮 */
+.ch-mute {
+  width: 100%;
+  padding: 0.35rem 0;
+  border: 1px solid #333;
+  border-radius: 5px;
+  background: #1a1a1a;
+  color: #aaa;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.ch-mute:hover { background: #222; border-color: #555; color: #fff; }
+
+.ch-mute--on {
+  background: rgba(239,68,68,0.18);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.ch-mute--on:hover { background: rgba(239,68,68,0.28); }

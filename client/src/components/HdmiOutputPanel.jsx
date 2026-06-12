@@ -23,10 +23,7 @@ function HdmiOutputPanel() {
     refresh();
     const offChanged = api.onDisplaysChanged(refresh);
     const offClosed = api.onOutputClosed(() => setOutputOpen(false));
-    return () => {
-      offChanged && offChanged();
-      offClosed && offClosed();
-    };
+    return () => { offChanged?.(); offClosed?.(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -39,15 +36,8 @@ function HdmiOutputPanel() {
     );
   }
 
-  const handleOpen = async () => {
-    await api.openOutput(selectedId);
-    setOutputOpen(true);
-  };
-
-  const handleClose = async () => {
-    await api.closeOutput();
-    setOutputOpen(false);
-  };
+  const handleOpen = async () => { await api.openOutput(selectedId); setOutputOpen(true); };
+  const handleClose = async () => { await api.closeOutput(); setOutputOpen(false); };
 
   return (
     <div className="hdmi-panel">
@@ -69,13 +59,9 @@ function HdmiOutputPanel() {
           </select>
           <div className="hdmi-actions">
             {!outputOpen ? (
-              <button className="hdmi-btn primary" onClick={handleOpen}>
-                ▶ 开启输出
-              </button>
+              <button className="hdmi-btn primary" onClick={handleOpen}>▶ 开启输出</button>
             ) : (
-              <button className="hdmi-btn danger" onClick={handleClose}>
-                ■ 关闭输出
-              </button>
+              <button className="hdmi-btn danger" onClick={handleClose}>■ 关闭输出</button>
             )}
           </div>
           <p className="hint">
