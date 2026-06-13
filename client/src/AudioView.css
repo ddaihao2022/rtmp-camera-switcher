@@ -3,7 +3,9 @@
 body {
   background: #0a0a0a;
   color: #d4d4d4;
-  font-family: 'Consolas', 'Segoe UI', monospace;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   height: 100vh;
   overflow: hidden;
 }
@@ -20,22 +22,27 @@ body {
   display: flex;
   align-items: baseline;
   gap: 1rem;
-  padding: 0.75rem 1.25rem;
-  background: #111;
-  border-bottom: 1px solid #1e1e1e;
+  padding: 0.6875rem 1.25rem;
+  background: rgba(17, 17, 17, 0.85);
+  backdrop-filter: saturate(180%) blur(40px);
+  -webkit-backdrop-filter: saturate(180%) blur(40px);
+  border-bottom: 0.33px solid rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
+  box-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.06),
+              0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .av-title {
-  font-size: 1rem;
-  font-weight: 700;
-  color: #e5e5e5;
-  letter-spacing: 0.05em;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  letter-spacing: -0.015em;
 }
 
 .av-sub {
-  font-size: 0.78rem;
-  color: #555;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 500;
 }
 
 /* 空状态 */
@@ -71,24 +78,29 @@ body {
 /* 底部状态栏 */
 .av-footer {
   padding: 0.5rem 1.25rem;
-  background: #0d1a14;
-  border-top: 1px solid #1e3428;
+  background: rgba(13, 26, 20, 0.85);
+  backdrop-filter: saturate(180%) blur(40px);
+  -webkit-backdrop-filter: saturate(180%) blur(40px);
+  border-top: 0.33px solid rgba(16, 185, 129, 0.2);
   display: flex;
   align-items: center;
   gap: 0.75rem;
   flex-shrink: 0;
+  box-shadow: 0 -0.5px 0 rgba(16, 185, 129, 0.1),
+              0 -2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .av-out-label {
-  font-size: 0.72rem;
-  color: #10b981;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: 0.6875rem;
+  color: rgb(16, 185, 129);
+  font-weight: 600;
+  letter-spacing: 0.03em;
 }
 
 .av-out-key {
-  font-size: 0.85rem;
-  color: #6ee7b7;
+  font-size: 0.8125rem;
+  color: rgb(110, 231, 183);
+  font-weight: 500;
 }
 
 /* ─── 单路音频条（竖向调音台风格） ─── */
@@ -99,18 +111,23 @@ body {
   width: 100px;
   min-width: 90px;
   flex-shrink: 0;
-  background: #141414;
-  border: 1px solid #222;
-  border-radius: 8px;
+  background: rgba(20, 20, 20, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 0.33px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
   padding: 0.75rem 0.5rem 0.6rem;
-  gap: 0.45rem;
-  transition: border-color 0.2s;
+  gap: 0.5rem;
+  transition: all 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15),
+              inset 0 0 0 0.5px rgba(255, 255, 255, 0.03);
 }
 
 .ch--out {
-  border-color: #10b981;
-  background: #0d1a14;
-  box-shadow: 0 0 10px rgba(16,185,129,0.12);
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(13, 26, 20, 0.85);
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.15),
+              0 0 0 1px rgba(16, 185, 129, 0.2) inset;
 }
 
 .ch--muted { opacity: 0.5; }
@@ -161,18 +178,20 @@ body {
   display: flex;
   align-items: flex-end;
   gap: 1px;
-  background: #0a0a0a;
-  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 6px;
   padding: 2px;
   overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .ch-spec-bar {
   flex: 1;
-  background: linear-gradient(to top, #667eea, #764ba2);
+  background: linear-gradient(to top, rgb(102, 126, 234), rgb(118, 75, 162));
   border-radius: 1px;
   min-height: 1px;
   transition: height 0.04s linear;
+  box-shadow: 0 0 3px rgba(102, 126, 234, 0.3);
 }
 
 /* VU 条 */
@@ -180,9 +199,10 @@ body {
   position: relative;
   width: 100%;
   height: 5px;
-  background: #1a1a1a;
+  background: rgba(26, 26, 26, 0.8);
   border-radius: 3px;
   overflow: visible;
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.2);
 }
 
 .ch-vu-fill {
@@ -190,15 +210,17 @@ body {
   border-radius: 3px;
   transition: width 0.04s linear, background 0.1s;
   min-width: 2px;
+  box-shadow: 0 0 4px currentColor;
 }
 
 .ch-vu-peak {
   position: absolute;
   top: -1px;
   width: 2px; height: 7px;
-  background: rgba(255,255,255,0.85);
+  background: rgba(255, 255, 255, 0.9);
   border-radius: 1px;
   transform: translateX(-1px);
+  box-shadow: 0 0 3px rgba(255, 255, 255, 0.5);
 }
 
 .ch-db {
@@ -253,23 +275,32 @@ body {
 /* 静音按钮 */
 .ch-mute {
   width: 100%;
-  padding: 0.35rem 0;
-  border: 1px solid #333;
-  border-radius: 5px;
-  background: #1a1a1a;
-  color: #aaa;
-  font-size: 0.72rem;
+  padding: 0.375rem 0;
+  border: 0.33px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.6875rem;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   white-space: nowrap;
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
-.ch-mute:hover { background: #222; border-color: #555; color: #fff; }
+.ch-mute:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.95);
+}
 
 .ch-mute--on {
-  background: rgba(239,68,68,0.18);
-  border-color: #ef4444;
-  color: #ef4444;
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: rgb(239, 68, 68);
 }
 
-.ch-mute--on:hover { background: rgba(239,68,68,0.28); }
+.ch-mute--on:hover {
+  background: rgba(239, 68, 68, 0.28);
+  border-color: rgba(239, 68, 68, 0.7);
+}

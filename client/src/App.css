@@ -1,27 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 .app {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .header {
-  background: rgba(28, 28, 30, 0.88);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  padding: 1rem 2rem;
+  background: rgba(28, 28, 30, 0.72);
+  backdrop-filter: saturate(180%) blur(40px);
+  -webkit-backdrop-filter: saturate(180%) blur(40px);
+  padding: 0.875rem 2rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08),
-              0 8px 24px rgba(0, 0, 0, 0.35);
-  border-bottom: 0.5px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.1),
+              0 1px 2px rgba(0, 0, 0, 0.08),
+              0 8px 32px rgba(0, 0, 0, 0.28);
+  border-bottom: 0.33px solid rgba(255, 255, 255, 0.12);
+  z-index: 100;
 }
 
 .header h1 {
-  font-size: 1.5rem;
+  font-size: 1.375rem;
   font-weight: 600;
-  letter-spacing: -0.02em;
-  color: rgba(255, 255, 255, 0.95);
+  letter-spacing: -0.022em;
+  color: rgba(255, 255, 255, 0.98);
+  line-height: 1.2;
 }
 
 .header-controls {
@@ -60,35 +68,44 @@
 }
 
 .stream-count {
-  background: rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  padding: 0.375rem 0.75rem;
-  border-radius: 12px;
-  font-size: 0.875rem;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 0.3125rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.8125rem;
   font-weight: 500;
-  border: 0.5px solid rgba(255, 255, 255, 0.15);
+  letter-spacing: -0.01em;
+  border: 0.33px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
 .view-mode-btn {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 0.5px solid rgba(255, 255, 255, 0.18);
-  color: rgba(255, 255, 255, 0.92);
-  padding: 0.5rem 1rem;
-  border-radius: 10px;
-  font-size: 0.9rem;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 0.33px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.95);
+  padding: 0.5rem 1.125rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   font-weight: 500;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.012em;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 .view-mode-btn:hover {
-  background: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.25);
-  transform: scale(1.02);
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.28);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+}
+
+.view-mode-btn:active {
+  transform: translateY(0);
+  transition-duration: 0.1s;
 }
 
 .audio-open-btn {
@@ -104,13 +121,14 @@
 
 .sidebar {
   width: 320px;
-  background: rgba(28, 28, 30, 0.75);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border-right: 0.5px solid rgba(255, 255, 255, 0.08);
+  background: rgba(28, 28, 30, 0.65);
+  backdrop-filter: saturate(180%) blur(40px);
+  -webkit-backdrop-filter: saturate(180%) blur(40px);
+  border-right: 0.33px solid rgba(255, 255, 255, 0.1);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.04);
 }
 
 /* 流列表区：占用剩余空间，独立滚动 */
@@ -137,12 +155,13 @@
 .sidebar-bottom::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
 
 .sidebar h2 {
-  padding: 1.25rem 1.5rem;
-  font-size: 1.1rem;
+  padding: 1rem 1.5rem 0.875rem;
+  font-size: 0.9375rem;
   font-weight: 600;
-  letter-spacing: -0.02em;
-  border-bottom: 0.5px solid rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.95);
+  letter-spacing: -0.018em;
+  border-bottom: 0.33px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.92);
+  text-transform: none;
 }
 
 .stream-list {
@@ -164,27 +183,29 @@
 .stream-item {
   display: flex;
   align-items: center;
-  gap: 0.875rem;
-  padding: 0.875rem 1rem;
-  margin-bottom: 0.5rem;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 12px;
+  gap: 0.75rem;
+  padding: 0.75rem 0.875rem;
+  margin-bottom: 0.375rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   position: relative;
-  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  border: 0.33px solid rgba(255, 255, 255, 0.06);
 }
 
 .stream-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.15);
-  transform: translateX(3px);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  transform: translateX(2px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
 }
 
 .stream-item.active {
-  background: rgba(10, 132, 255, 0.18);
-  border-color: rgba(10, 132, 255, 0.35);
-  box-shadow: 0 4px 16px rgba(10, 132, 255, 0.25);
+  background: rgba(10, 132, 255, 0.15);
+  border-color: rgba(10, 132, 255, 0.4);
+  box-shadow: 0 2px 12px rgba(10, 132, 255, 0.2),
+              0 0 0 1px rgba(10, 132, 255, 0.15) inset;
 }
 
 .stream-item.output {
@@ -214,79 +235,97 @@
 
 .stream-status {
   display: inline-block;
-  padding: 0.2rem 0.6rem;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  font-weight: 500;
+  padding: 0.1875rem 0.5625rem;
+  border-radius: 8px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: -0.008em;
   margin-right: 0.5rem;
 }
 
 .stream-status.online {
-  background: rgba(52, 199, 89, 0.18);
+  background: rgba(52, 199, 89, 0.15);
   color: rgb(52, 199, 89);
-  border: 0.5px solid rgba(52, 199, 89, 0.3);
+  border: 0.33px solid rgba(52, 199, 89, 0.3);
+  box-shadow: 0 1px 2px rgba(52, 199, 89, 0.08);
 }
 
 .output-badge {
   display: inline-block;
-  padding: 0.25rem 0.625rem;
-  border-radius: 10px;
-  font-size: 0.75rem;
+  padding: 0.21875rem 0.625rem;
+  border-radius: 8px;
+  font-size: 0.6875rem;
   font-weight: 600;
-  background: rgba(52, 199, 89, 0.2);
+  letter-spacing: -0.008em;
+  background: rgba(52, 199, 89, 0.18);
   color: rgb(52, 199, 89);
-  border: 0.5px solid rgba(52, 199, 89, 0.3);
+  border: 0.33px solid rgba(52, 199, 89, 0.35);
+  box-shadow: 0 1px 2px rgba(52, 199, 89, 0.1);
 }
 
 .select-output-btn {
-  padding: 0.5rem 0.875rem;
-  background: rgba(52, 199, 89, 0.15);
-  border: 0.5px solid rgba(52, 199, 89, 0.5);
+  padding: 0.4375rem 0.875rem;
+  background: rgba(52, 199, 89, 0.12);
+  border: 0.33px solid rgba(52, 199, 89, 0.45);
   color: rgb(52, 199, 89);
-  border-radius: 10px;
+  border-radius: 7px;
   cursor: pointer;
-  font-size: 0.95rem;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 0.8125rem;
+  transition: all 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   flex-shrink: 0;
   font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
 .select-output-btn:hover {
-  background: rgba(52, 199, 89, 0.25);
-  transform: scale(1.05);
+  background: rgba(52, 199, 89, 0.22);
+  transform: scale(1.03);
+  box-shadow: 0 1px 4px rgba(52, 199, 89, 0.2);
+}
+
+.select-output-btn:active {
+  transform: scale(0.98);
+  transition-duration: 0.1s;
 }
 
 .stream-item.output .select-output-btn {
-  background: rgba(52, 199, 89, 0.95);
+  background: rgb(52, 199, 89);
   color: white;
-  box-shadow: 0 4px 12px rgba(52, 199, 89, 0.3);
+  box-shadow: 0 2px 8px rgba(52, 199, 89, 0.3),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
 }
 
 .connection-info {
-  padding: 1.5rem;
-  background: rgba(28, 28, 30, 0.65);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  padding: 1.25rem;
+  background: rgba(28, 28, 30, 0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 .connection-info h3 {
-  font-size: 1rem;
-  margin-bottom: 1rem;
+  font-size: 0.9375rem;
+  margin-bottom: 0.875rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .rtmp-url {
-  background: rgba(0, 0, 0, 0.4);
-  padding: 0.75rem 0.875rem;
-  border-radius: 10px;
-  margin-bottom: 0.8rem;
-  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.35);
+  padding: 0.6875rem 0.875rem;
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+  border: 0.33px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .rtmp-url code {
   color: rgb(52, 199, 89);
-  font-size: 0.85rem;
+  font-size: 0.8125rem;
   word-break: break-all;
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-family: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
 .hint {
@@ -389,13 +428,15 @@
 }
 
 .grid-item {
-  background: rgba(26, 26, 26, 0.75);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-radius: 16px;
+  background: rgba(26, 26, 26, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 14px;
   overflow: hidden;
   min-height: 300px;
-  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  border: 0.33px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25),
+              0 0 0 1px rgba(255, 255, 255, 0.04) inset;
 }
 
 .video-player-container {
@@ -448,22 +489,29 @@
 }
 
 .fullscreen-btn {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 0.5px solid rgba(255, 255, 255, 0.18);
-  color: rgba(255, 255, 255, 0.92);
-  padding: 0.4rem 0.875rem;
-  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 0.33px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.95);
+  padding: 0.375rem 0.8125rem;
+  border-radius: 7px;
   cursor: pointer;
-  font-size: 0.875rem;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 0.8125rem;
+  transition: all 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
 .fullscreen-btn:hover {
-  background: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.28);
+  transform: translateY(-1px);
+}
+
+.fullscreen-btn:active {
+  transform: translateY(0);
+  transition-duration: 0.1s;
 }
 
 .video-wrapper:fullscreen {
@@ -482,22 +530,25 @@
 }
 
 .live-badge {
-  background: rgba(255, 59, 48, 0.95);
-  padding: 0.375rem 0.875rem;
-  border-radius: 12px;
-  font-size: 0.875rem;
+  background: rgb(255, 59, 48);
+  padding: 0.3125rem 0.8125rem;
+  border-radius: 8px;
+  font-size: 0.8125rem;
   font-weight: 600;
-  letter-spacing: -0.01em;
-  box-shadow: 0 4px 12px rgba(255, 59, 48, 0.3);
+  letter-spacing: -0.012em;
+  box-shadow: 0 2px 8px rgba(255, 59, 48, 0.28),
+              0 0 0 0.5px rgba(255, 255, 255, 0.15) inset;
 }
 
 .video-wrapper {
   position: relative;
   width: 100%;
   background: #000;
-  border-radius: 16px;
+  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4),
+              0 2px 8px rgba(0, 0, 0, 0.2),
+              0 0 0 0.5px rgba(255, 255, 255, 0.06);
 }
 
 .video-player {
@@ -522,23 +573,32 @@
 }
 
 .play-button {
-  padding: 1.25rem 2.5rem;
-  font-size: 1.35rem;
-  background: rgba(10, 132, 255, 0.95);
+  padding: 1rem 2.25rem;
+  font-size: 1.125rem;
+  background: rgb(10, 132, 255);
   color: white;
   border: none;
-  border-radius: 16px;
+  border-radius: 12px;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 8px 24px rgba(10, 132, 255, 0.35);
+  transition: all 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 4px 16px rgba(10, 132, 255, 0.3),
+              0 1px 3px rgba(10, 132, 255, 0.2),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
   font-weight: 500;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.014em;
 }
 
 .play-button:hover {
-  transform: scale(1.04);
-  background: rgba(10, 132, 255, 1);
-  box-shadow: 0 12px 32px rgba(10, 132, 255, 0.45);
+  transform: translateY(-2px);
+  background: rgb(0, 122, 255);
+  box-shadow: 0 8px 24px rgba(10, 132, 255, 0.4),
+              0 2px 6px rgba(10, 132, 255, 0.25),
+              0 0 0 1px rgba(255, 255, 255, 0.15) inset;
+}
+
+.play-button:active {
+  transform: translateY(0);
+  transition-duration: 0.1s;
 }
 
 .error-overlay {
@@ -585,36 +645,41 @@
 }
 
 .hdmi-panel {
-  padding: 1.5rem;
-  border-top: 0.5px solid rgba(255, 255, 255, 0.08);
-  background: rgba(28, 28, 30, 0.65);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  padding: 1.25rem;
+  border-top: 0.33px solid rgba(255, 255, 255, 0.1);
+  background: rgba(28, 28, 30, 0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 .hdmi-panel h3 {
-  font-size: 1rem;
-  margin-bottom: 1rem;
+  font-size: 0.9375rem;
+  margin-bottom: 0.875rem;
   color: #f59e0b;
+  font-weight: 600;
+  letter-spacing: -0.015em;
 }
 
 .hdmi-select {
   width: 100%;
-  background: rgba(0, 0, 0, 0.4);
-  color: rgba(255, 255, 255, 0.92);
-  border: 0.5px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 0.625rem 0.875rem;
-  font-size: 0.9rem;
-  margin-bottom: 0.8rem;
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(255, 255, 255, 0.95);
+  border: 0.33px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 0.5625rem 0.875rem;
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
   font-family: inherit;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .hdmi-select:focus {
   outline: none;
   border-color: rgba(255, 159, 10, 0.6);
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 3px rgba(255, 159, 10, 0.08),
+              inset 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .hdmi-actions {
@@ -625,66 +690,89 @@
 
 .hdmi-btn {
   flex: 1;
-  padding: 0.6rem 0.8rem;
+  padding: 0.5625rem 0.875rem;
   border: none;
-  border-radius: 6px;
+  border-radius: 7px;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   font-weight: 500;
-  transition: transform 0.15s, opacity 0.15s;
+  letter-spacing: -0.01em;
+  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .hdmi-btn:hover {
   transform: translateY(-1px);
-  opacity: 0.92;
+}
+
+.hdmi-btn:active {
+  transform: translateY(0);
+  transition-duration: 0.1s;
 }
 
 .hdmi-btn.primary {
-  background: rgba(255, 159, 10, 0.95);
+  background: rgb(255, 159, 10);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(255, 159, 10, 0.25);
+  box-shadow: 0 2px 8px rgba(255, 159, 10, 0.25),
+              0 0 0 0.5px rgba(255, 255, 255, 0.1) inset;
+}
+
+.hdmi-btn.primary:hover {
+  box-shadow: 0 4px 12px rgba(255, 159, 10, 0.3),
+              0 0 0 0.5px rgba(255, 255, 255, 0.15) inset;
 }
 
 .hdmi-btn.danger {
-  background: rgba(239, 68, 68, 0.2);
-  border: 1px solid #ef4444;
-  color: #ef4444;
+  background: rgba(239, 68, 68, 0.18);
+  border: 0.33px solid rgba(239, 68, 68, 0.5);
+  color: rgb(239, 68, 68);
+}
+
+.hdmi-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.28);
+  border-color: rgba(239, 68, 68, 0.7);
 }
 
 .reconnect-btn {
-  margin-top: 1rem;
-  padding: 0.5rem 1.125rem;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  color: rgba(255, 255, 255, 0.92);
-  border: 0.5px solid rgba(255, 255, 255, 0.18);
-  border-radius: 10px;
+  margin-top: 0.875rem;
+  padding: 0.4375rem 1rem;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: rgba(255, 255, 255, 0.95);
+  border: 0.33px solid rgba(255, 255, 255, 0.2);
+  border-radius: 7px;
   cursor: pointer;
-  font-size: 0.9rem;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 0.875rem;
+  transition: all 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
 .reconnect-btn:hover {
-  background: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.25);
-  transform: scale(1.02);
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.28);
+  transform: translateY(-1px);
+}
+
+.reconnect-btn:active {
+  transform: translateY(0);
+  transition-duration: 0.1s;
 }
 
 /* ===== PROGRAM 监视浮窗 ===== */
 .output-monitor {
   position: fixed;
-  right: 1.2rem;
-  bottom: 1.2rem;
+  right: 1.125rem;
+  bottom: 1.125rem;
   width: 360px;
-  background: rgba(28, 28, 30, 0.88);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border: 0.5px solid rgba(255, 255, 255, 0.12);
-  border-radius: 16px;
-  box-shadow: 0 20px 64px rgba(0, 0, 0, 0.6),
-              0 0 0 0.5px rgba(239, 68, 68, 0.2);
+  background: rgba(28, 28, 30, 0.85);
+  backdrop-filter: saturate(180%) blur(40px);
+  -webkit-backdrop-filter: saturate(180%) blur(40px);
+  border: 0.33px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5),
+              0 2px 8px rgba(0, 0, 0, 0.2),
+              0 0 0 0.5px rgba(239, 68, 68, 0.15);
   overflow: hidden;
   z-index: 999;
   display: flex;
@@ -1126,12 +1214,14 @@
   width: 460px;
   max-width: 96vw;
   max-height: 88vh;
-  background: rgba(28, 28, 30, 0.95);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border: 0.5px solid rgba(255, 255, 255, 0.12);
-  border-radius: 16px;
-  box-shadow: 0 32px 96px rgba(0, 0, 0, 0.75);
+  background: rgba(28, 28, 30, 0.94);
+  backdrop-filter: saturate(180%) blur(40px);
+  -webkit-backdrop-filter: saturate(180%) blur(40px);
+  border: 0.33px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7),
+              0 4px 16px rgba(0, 0, 0, 0.3),
+              0 0 0 0.5px rgba(255, 255, 255, 0.06) inset;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1229,8 +1319,9 @@
   border-radius: 11px;
   background: rgba(120, 120, 128, 0.32);
   position: relative;
-  transition: background 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   flex-shrink: 0;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .settings-toggle-track::after {
@@ -1242,17 +1333,20 @@
   height: 18px;
   border-radius: 50%;
   background: white;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2),
+              0 0 0 0.5px rgba(0, 0, 0, 0.04);
 }
 
 .settings-toggle input:checked + .settings-toggle-track {
-  background: rgba(52, 199, 89, 0.95);
+  background: rgb(52, 199, 89);
 }
 
 .settings-toggle input:checked + .settings-toggle-track::after {
   background: white;
   left: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2),
+              0 0 0 0.5px rgba(52, 199, 89, 0.1);
 }
 
 .settings-toggle-label {
@@ -1282,21 +1376,24 @@
 .settings-textarea {
   width: 100%;
   background: rgba(0, 0, 0, 0.3);
-  border: 0.5px solid rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.92);
-  border-radius: 10px;
-  padding: 0.625rem 0.875rem;
+  border: 0.33px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  padding: 0.5625rem 0.875rem;
   font-size: 0.875rem;
   resize: vertical;
   font-family: inherit;
   margin-bottom: 0.5rem;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .settings-textarea:focus {
   outline: none;
   border-color: rgba(10, 132, 255, 0.6);
   background: rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.08),
+              inset 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 /* 颜色选择器 */
@@ -1344,21 +1441,29 @@
 .settings-btn-primary {
   flex: 1;
   padding: 0.625rem 1.125rem;
-  background: rgba(10, 132, 255, 0.95);
+  background: rgb(10, 132, 255);
   border: none;
   color: #fff;
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 500;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 12px rgba(10, 132, 255, 0.25);
+  letter-spacing: -0.01em;
+  transition: all 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 2px 8px rgba(10, 132, 255, 0.25),
+              0 0 0 0.5px rgba(255, 255, 255, 0.1) inset;
 }
 
 .settings-btn-primary:hover {
-  background: rgba(10, 132, 255, 1);
-  box-shadow: 0 6px 16px rgba(10, 132, 255, 0.35);
-  transform: scale(1.02);
+  background: rgb(0, 122, 255);
+  box-shadow: 0 4px 12px rgba(10, 132, 255, 0.35),
+              0 0 0 0.5px rgba(255, 255, 255, 0.15) inset;
+  transform: translateY(-1px);
+}
+
+.settings-btn-primary:active {
+  transform: translateY(0);
+  transition-duration: 0.1s;
 }
 
 .settings-btn-danger {

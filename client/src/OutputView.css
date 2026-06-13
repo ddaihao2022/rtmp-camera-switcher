@@ -34,19 +34,25 @@ body.output-mode #root {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #888;
-  font-size: 1.6rem;
+  color: rgba(136, 136, 136, 0.9);
+  font-size: 1.5rem;
   text-align: center;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 .output-msg .hint {
-  font-size: 1rem;
-  margin-top: 0.6rem;
-  color: #555;
+  font-size: 0.9375rem;
+  margin-top: 0.625rem;
+  color: rgba(85, 85, 85, 0.9);
+  font-weight: 400;
+  letter-spacing: -0.012em;
 }
 
 .output-msg.error {
-  color: #ef4444;
+  color: rgb(239, 68, 68);
 }
 
 .output-audio-wrap {
@@ -55,15 +61,20 @@ body.output-mode #root {
   align-items: center;
   justify-content: center;
   gap: 1.5rem;
-  color: #aaa;
+  color: rgba(170, 170, 170, 0.9);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
 }
 
 .output-audio-label {
-  font-size: 1.4rem;
-  color: #ccc;
+  font-size: 1.375rem;
+  color: rgba(204, 204, 204, 0.95);
+  font-weight: 500;
+  letter-spacing: -0.015em;
 }
 
 .output-audio {
   width: 480px;
   max-width: 90vw;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
