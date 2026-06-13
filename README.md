@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/react-18-61DAFB" />
 </p>
 
-> Copyright © 2024 ddaihao2022. 保留所有权利 · All rights reserved.  
+> Copyright © 2026 ddaihao2022. 保留所有权利 · All rights reserved.  
 > 本软件已完成软件著作权登记 · Software copyright registered.
 
 ---
