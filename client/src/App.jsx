@@ -251,7 +251,16 @@ function App() {
               ))}
             </div>
           ) : selectedStream ? (
-            <VideoPlayer stream={selectedStream} compact={false} onVideoReady={handleVideoReady} onVideoUnmount={handleVideoUnmount} />
+            <VideoPlayer stream={selectedStream} compact={false} onVideoReady={handleVideoReady} onVideoUnmount={handleVideoUnmount}
+              onEnded={(key) => {
+                // 顺序播放：当前本地媒体播完后自动切换到下一条（不循环的前提下）
+                const idx = localStreams.findIndex(s => s.streamKey === key);
+                if (idx !== -1 && idx + 1 < localStreams.length) {
+                  const next = localStreams[idx + 1];
+                  handleStreamSelect(next);
+                }
+              }}
+            />
           ) : (
             <div className="no-stream">
               <div className="placeholder">

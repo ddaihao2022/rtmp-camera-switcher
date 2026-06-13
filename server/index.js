@@ -274,10 +274,30 @@ app.post('/api/local/add', (req, res) => {
   const ext = filePath.split('.').pop() || '';
   const fileType = ext.match(/^(mp3|aac|wav|flac|m4a|ogg)$/i) ? 'audio' : 'video';
   const key = 'local/' + fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-  localFiles.set(key, { streamKey: key, filePath, fileName, fileType,
-    startTime: new Date(), status: 'online', type: 'local' });
+  localFiles.set(key, {
+    streamKey: key, filePath, fileName, fileType,
+    startTime: new Date(), status: 'online', type: 'local',
+    // 播放设置默认值
+    loop: false,
+    autoplay: true,
+    playbackRate: 1.0,
+  });
   io.emit('streamUpdate', [...Array.from(activeStreams.values()), ...Array.from(localFiles.values())]);
   res.json({ streamKey: key });
+});
+
+// 更新本地文件播放设置
+app.patch('/api/local/:key(*)', (req, res) => {
+  const key = req.params.key;
+  const fullKey = key.startsWith('local/') ? key : 'local/' + key;
+  const item = localFiles.get(fullKey);
+  if (!item) return res.status(404).json({ error: 'not found' });
+  const allowed = ['loop', 'autoplay', 'playbackRate'];
+  for (const field of allowed) {
+    if (req.body[field] !== undefined) item[field] = req.body[field];
+  }
+  io.emit('streamUpdate', [...Array.from(activeStreams.values()), ...Array.from(localFiles.values())]);
+  res.json(item);
 });
 
 // 移除本地文件虚拟流

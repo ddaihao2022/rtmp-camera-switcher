@@ -167,10 +167,15 @@ function OutputView() {
             localItem.fileType === 'audio' ? (
               <div className="output-audio-wrap">
                 <p className="output-audio-label">🎵 {localItem.fileName}</p>
-                <audio src={localUrl} autoPlay controls className="output-audio" />
+                <audio src={localUrl} autoPlay={localItem.autoplay ?? true}
+                  loop={localItem.loop ?? false} controls className="output-audio"
+                  ref={el => { if (el) el.playbackRate = localItem.playbackRate ?? 1.0; }} />
               </div>
             ) : (
-              <video src={localUrl} className="output-video" autoPlay playsInline controls={false} />
+              <video src={localUrl} className="output-video"
+                autoPlay={localItem.autoplay ?? true} playsInline controls={false}
+                loop={localItem.loop ?? false}
+                ref={el => { if (el) el.playbackRate = localItem.playbackRate ?? 1.0; }} />
             )
           ) : (
             <video ref={videoRef} className="output-video" autoPlay muted playsInline />

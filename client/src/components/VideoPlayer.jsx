@@ -1,15 +1,29 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import flvjs from 'flv.js';
 
 const API = 'http://localhost:3001';
 
+const RATE_CYCLE = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+
+async function patchLocalSettings(streamKey, patch) {
+  const keyPart = streamKey.replace(/^local\//, '');
+  await fetch(`${API}/api/local/${encodeURIComponent(keyPart)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
 // ─── 本地文件播放器（原生 video / audio 标签） ────────────────────────────────
-function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount }) {
+function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount, onEnded }) {
   const mediaRef = useRef(null);
   const wrapperRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const isAudio = stream.fileType === 'audio';
+  const loop = stream.loop ?? false;
+  const autoplay = stream.autoplay ?? true;
+  const playbackRate = stream.playbackRate ?? 1.0;
 
   // 构建可访问的 URL
   const mediaUrl = stream.filePath?.startsWith('blob:')
@@ -28,6 +42,23 @@ function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount }) {
     return () => onVideoUnmount?.(stream.streamKey);
   }, [stream.streamKey, onVideoReady, onVideoUnmount]);
 
+  // 同步播放设置到 media 元素
+  useEffect(() => {
+    const el = mediaRef.current;
+    if (!el) return;
+    el.loop = loop;
+    el.playbackRate = playbackRate;
+  }, [loop, playbackRate]);
+
+  // 播放结束回调（用于顺序播放）
+  useEffect(() => {
+    const el = mediaRef.current;
+    if (!el || loop) return;
+    const handleEnded = () => onEnded?.(stream.streamKey);
+    el.addEventListener('ended', handleEnded);
+    return () => el.removeEventListener('ended', handleEnded);
+  }, [stream.streamKey, loop, onEnded]);
+
   const toggleFullscreen = () => {
     const el = wrapperRef.current;
     if (!el) return;
@@ -38,6 +69,21 @@ function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount }) {
     }
   };
 
+  const handleToggleLoop = useCallback(async (e) => {
+    e.stopPropagation();
+    const next = !loop;
+    await patchLocalSettings(stream.streamKey, { loop: next });
+    if (mediaRef.current) mediaRef.current.loop = next;
+  }, [stream.streamKey, loop]);
+
+  const handleCycleRate = useCallback(async (e) => {
+    e.stopPropagation();
+    const idx = RATE_CYCLE.indexOf(playbackRate);
+    const next = RATE_CYCLE[(idx + 1) % RATE_CYCLE.length];
+    await patchLocalSettings(stream.streamKey, { playbackRate: next });
+    if (mediaRef.current) mediaRef.current.playbackRate = next;
+  }, [stream.streamKey, playbackRate]);
+
   const displayName = stream.fileName || stream.streamKey;
 
   return (
@@ -45,6 +91,18 @@ function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount }) {
       <div className="video-header">
         <h2 title={displayName}>{compact ? displayName.slice(0, 20) : displayName}</h2>
         <div className="video-header-actions">
+          {/* 循环切换按钮 */}
+          <button
+            className={`player-ctrl-btn ${loop ? 'player-ctrl-btn--on' : ''}`}
+            onClick={handleToggleLoop}
+            title={loop ? '循环：开启（点击关闭）' : '循环：关闭（点击开启）'}
+          >🔁</button>
+          {/* 速率循环按钮 */}
+          <button
+            className={`player-ctrl-btn player-ctrl-btn--rate ${playbackRate !== 1.0 ? 'player-ctrl-btn--on' : ''}`}
+            onClick={handleCycleRate}
+            title={`播放速率 ${playbackRate}x（点击切换）`}
+          >{playbackRate}x</button>
           <span className="live-badge local-badge">{isAudio ? '🎵 音频' : '🎬 本地'}</span>
           {!isAudio && (
             <button className="fullscreen-btn" onClick={toggleFullscreen}>
@@ -55,15 +113,18 @@ function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount }) {
       </div>
       <div className="video-wrapper" ref={wrapperRef} onDoubleClick={!isAudio ? toggleFullscreen : undefined}>
         {isAudio ? (
-          <audio ref={mediaRef} src={mediaUrl} controls className="local-audio" />
+          <audio ref={mediaRef} src={mediaUrl} controls className="local-audio"
+            autoPlay={autoplay} loop={loop} />
         ) : (
-          <video ref={mediaRef} src={mediaUrl} className="video-player" controls playsInline />
+          <video ref={mediaRef} src={mediaUrl} className="video-player" controls playsInline
+            autoPlay={autoplay} loop={loop} />
         )}
       </div>
       {!compact && (
         <div className="video-info">
           <p>文件: {stream.fileName}</p>
           <p>类型: {isAudio ? '音频' : '视频'}</p>
+          <p>循环: {loop ? '开启' : '关闭'} | 自动播放: {autoplay ? '开启' : '关闭'} | 速率: {playbackRate}x</p>
         </div>
       )}
     </div>
@@ -184,9 +245,9 @@ function LivePlayer({ stream, compact, onVideoReady, onVideoUnmount }) {
 }
 
 // ─── 统一入口 ─────────────────────────────────────────────────────────────────
-function VideoPlayer({ stream, compact = false, onVideoReady, onVideoUnmount }) {
+function VideoPlayer({ stream, compact = false, onVideoReady, onVideoUnmount, onEnded }) {
   if (stream?.type === 'local') {
-    return <LocalPlayer stream={stream} compact={compact} onVideoReady={onVideoReady} onVideoUnmount={onVideoUnmount} />;
+    return <LocalPlayer stream={stream} compact={compact} onVideoReady={onVideoReady} onVideoUnmount={onVideoUnmount} onEnded={onEnded} />;
   }
   return <LivePlayer stream={stream} compact={compact} onVideoReady={onVideoReady} onVideoUnmount={onVideoUnmount} />;
 }

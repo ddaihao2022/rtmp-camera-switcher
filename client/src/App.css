@@ -1459,3 +1459,166 @@
   background: #f59e0b;
   animation: pulse 0.5s infinite;
 }
+
+/* ===== 本地媒体 - 播放设置 ===== */
+.local-item {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+
+.local-item-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.local-item-badges {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.media-badge {
+  font-size: 0.65rem;
+  background: rgba(102,126,234,0.2);
+  border-radius: 3px;
+  padding: 1px 3px;
+  color: #a5b4fc;
+  line-height: 1.4;
+}
+
+.local-settings-btn {
+  background: transparent;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 2px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  transition: all 0.15s;
+  line-height: 1;
+}
+.local-settings-btn:hover,
+.local-settings-btn.active { color: #a5b4fc; background: rgba(102,126,234,0.2); }
+
+.play-settings-popover {
+  background: #1e1e2e;
+  border: 1px solid #3b3b6e;
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-top: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.play-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: #ccc;
+}
+
+.play-settings-row label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.play-settings-row input[type="checkbox"] {
+  accent-color: #667eea;
+  width: 14px;
+  height: 14px;
+}
+
+.play-settings-row select {
+  background: #2a2a3e;
+  border: 1px solid #3b3b6e;
+  color: #ccc;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.play-settings-label {
+  color: #999;
+  min-width: 60px;
+}
+
+.play-settings-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.2rem;
+}
+
+.play-settings-save {
+  padding: 0.25rem 0.7rem;
+  background: rgba(102,126,234,0.3);
+  border: 1px solid #667eea;
+  color: #a5b4fc;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  transition: all 0.15s;
+}
+.play-settings-save:hover { background: rgba(102,126,234,0.5); }
+.play-settings-save:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.play-settings-cancel {
+  padding: 0.25rem 0.7rem;
+  background: transparent;
+  border: 1px solid #444;
+  color: #888;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  transition: all 0.15s;
+}
+.play-settings-cancel:hover { border-color: #666; color: #bbb; }
+
+/* 循环/速率 badge in video header */
+.loop-badge { background: rgba(16,185,129,0.2); color: #6ee7b7; }
+.rate-badge { background: rgba(245,158,11,0.2); color: #fcd34d; }
+
+/* ===== 播放器 header 快捷控制按钮 ===== */
+.player-ctrl-btn {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #888;
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  line-height: 1.6;
+  flex-shrink: 0;
+}
+.player-ctrl-btn:hover {
+  background: rgba(255,255,255,0.12);
+  color: #ccc;
+  border-color: rgba(255,255,255,0.25);
+}
+.player-ctrl-btn--on {
+  background: rgba(102,126,234,0.25);
+  border-color: #667eea;
+  color: #a5b4fc;
+}
+.player-ctrl-btn--on:hover {
+  background: rgba(102,126,234,0.38);
+  color: #c7d2fe;
+}
+.player-ctrl-btn--rate {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  min-width: 32px;
+  text-align: center;
+}
