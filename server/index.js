@@ -104,9 +104,24 @@ setInterval(() => {
 // node-media-server v4 配置
 const nmsConfig = {
   bind: '0.0.0.0',
-  rtmp: { port: 1935 },
-  http: { port: 8000 },
-  auth: { play: false, publish: false }
+  rtmp: { 
+    port: 1935,
+    chunk_size: 4096,  // 降低 chunk 大小以减少分片延迟
+    gop_cache: false,  // 禁用 GOP 缓存
+    ping: 30,
+    ping_timeout: 60
+  },
+  http: { 
+    port: 8000,
+    allow_origin: '*',
+    mediaroot: './media'
+  },
+  auth: { play: false, publish: false },
+  // 传输配置优化
+  trans: {
+    ffmpeg: '/usr/bin/ffmpeg',
+    tasks: []
+  }
 };
 
 const nms = new NodeMediaServer(nmsConfig);

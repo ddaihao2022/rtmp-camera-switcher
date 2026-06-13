@@ -1622,3 +1622,41 @@
   min-width: 32px;
   text-align: center;
 }
+
+/* ===== 视频统计信息覆盖层 ===== */
+.video-stats-overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-family: 'Consolas', 'Monaco', monospace;
+  color: #ddd;
+  line-height: 1.6;
+  z-index: 5;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.stats-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  color: #aaa;
+}
+
+.stats-line span {
+  color: #10b981;
+  font-weight: 600;
+  min-width: 52px;
+  text-align: right;
+}
+
+.stats-line span.warn {
+  color: #f59e0b;
+}

@@ -140,6 +140,7 @@ function LivePlayer({ stream, compact, onVideoReady, onVideoUnmount }) {
   const [hasInteracted, setHasInteracted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [stats, setStats] = useState({ latency: 0, bufferLength: 0, fps: 0, bitrate: 0 });
 
   useEffect(() => {
     setHasInteracted(false);
@@ -173,10 +174,19 @@ function LivePlayer({ stream, compact, onVideoReady, onVideoUnmount }) {
 
     const player = flvjs.createPlayer(
       { type: 'flv', url: flvUrl, isLive: true, hasAudio: true, hasVideo: true },
-      { enableWorker: false, enableStashBuffer: false, stashInitialSize: 128,
-        autoCleanupSourceBuffer: true, autoCleanupMaxBackwardDuration: 3,
-        autoCleanupMinBackwardDuration: 2, liveBufferLatencyChasing: true,
-        liveBufferLatencyMaxLatency: 1.0, liveBufferLatencyMinRemain: 0.3 }
+      { 
+        enableWorker: false, 
+        enableStashBuffer: false, 
+        stashInitialSize: 32,  // 降低初始缓冲大小
+        autoCleanupSourceBuffer: true, 
+        autoCleanupMaxBackwardDuration: 2,  // 更激进地清理历史缓冲
+        autoCleanupMinBackwardDuration: 1, 
+        liveBufferLatencyChasing: true,
+        liveBufferLatencyMaxLatency: 0.5,  // 降低最大延迟阈值,更快触发追赶
+        liveBufferLatencyMinRemain: 0.1,   // 降低目标剩余缓冲,贴近实时
+        lazyLoad: false,  // 禁用懒加载
+        seekType: 'range'  // 使用 range 模式 seek
+      }
     );
 
     const onError = (t, d) => { console.error('FLV错误:', t, d); setError(`${t}: ${d}`); };
@@ -194,10 +204,61 @@ function LivePlayer({ stream, compact, onVideoReady, onVideoUnmount }) {
     const catchUpTimer = setInterval(() => {
       if (!v || v.paused || !v.buffered.length) return;
       const edge = v.buffered.end(v.buffered.length - 1);
-      if (edge - v.currentTime > 1.5) v.currentTime = edge - 0.2;
+      const lag = edge - v.currentTime;
+      // 更激进的追播策略
+      if (lag > 0.8) {
+        v.currentTime = edge - 0.1;  // 追到更接近实时的位置
+      } else if (lag > 0.5) {
+        v.playbackRate = 1.2;  // 轻微加速追赶
+      } else {
+        v.playbackRate = 1.0;  // 恢复正常速度
+      }
+    }, 500);  // 更频繁地检查
+
+    // 统计信息更新
+    let lastDecodedFrames = 0;
+    let lastBytes = 0;
+    let lastTime = Date.now();
+    
+    const statsTimer = setInterval(() => {
+      if (!v || !playerRef.current) return;
+      
+      const stats = playerRef.current.statisticsInfo;
+      const currentTime = Date.now();
+      const deltaTime = (currentTime - lastTime) / 1000;
+      
+      if (stats && deltaTime > 0) {
+        // 计算 FPS
+        const currentFrames = stats.decodedFrames || 0;
+        const fps = Math.round((currentFrames - lastDecodedFrames) / deltaTime);
+        lastDecodedFrames = currentFrames;
+        
+        // 计算比特率 (kbps)
+        const currentBytes = (stats.videoDataRate || 0) + (stats.audioDataRate || 0);
+        const bitrate = Math.round(((currentBytes - lastBytes) * 8) / (deltaTime * 1000));
+        lastBytes = currentBytes;
+        
+        lastTime = currentTime;
+        
+        // 计算延迟和缓冲长度
+        const latency = v.buffered.length > 0 
+          ? Math.round((v.buffered.end(v.buffered.length - 1) - v.currentTime) * 1000) 
+          : 0;
+        const bufferLength = v.buffered.length > 0 
+          ? Math.round((v.buffered.end(v.buffered.length - 1) - v.buffered.start(0)) * 1000)
+          : 0;
+        
+        setStats({
+          latency: Math.max(0, latency),
+          bufferLength: Math.max(0, bufferLength),
+          fps: fps > 0 ? fps : stats.currentFps || 0,
+          bitrate: bitrate > 0 ? bitrate : Math.round((stats.speed || 0) / 1024)
+        });
+      }
     }, 1000);
 
     return () => {
+      clearInterval(statsTimer);
       onVideoUnmount?.(stream.streamKey);
       clearInterval(catchUpTimer);
       v?.removeEventListener('loadeddata', tryPlay);
@@ -221,6 +282,15 @@ function LivePlayer({ stream, compact, onVideoReady, onVideoUnmount }) {
       </div>
       <div className="video-wrapper" ref={wrapperRef} onDoubleClick={toggleFullscreen}>
         <video ref={videoRef} key={reloadKey} className="video-player" controls playsInline />
+        
+        {/* 实时统计信息 */}
+        <div className="video-stats-overlay">
+          <div className="stats-line">延迟: <span className={stats.latency > 1000 ? 'warn' : ''}>{stats.latency}ms</span></div>
+          <div className="stats-line">缓冲: {stats.bufferLength}ms</div>
+          <div className="stats-line">帧率: {stats.fps} fps</div>
+          <div className="stats-line">码率: {stats.bitrate} kbps</div>
+        </div>
+        
         {!hasInteracted && !error && (
           <div className="play-overlay" onClick={() => { setHasInteracted(true); videoRef.current?.play?.().catch(() => {}); }}>
             <button className="play-button">{compact ? '▶' : '▶ 点击播放'}</button>

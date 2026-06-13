@@ -114,14 +114,16 @@ function OutputView() {
       {
         enableWorker: false,
         enableStashBuffer: false,
-        stashInitialSize: 128,
+        stashInitialSize: 32,  // 降低初始缓冲
         autoCleanupSourceBuffer: true,
-        autoCleanupMaxBackwardDuration: 3,
-        autoCleanupMinBackwardDuration: 2,
+        autoCleanupMaxBackwardDuration: 2,  // 更激进地清理历史缓冲
+        autoCleanupMinBackwardDuration: 1,
         // flv.js 1.6+ 内置追播:超过 maxLatency 自动加速到 minRemain
         liveBufferLatencyChasing: true,
-        liveBufferLatencyMaxLatency: 1.0,
-        liveBufferLatencyMinRemain: 0.3
+        liveBufferLatencyMaxLatency: 0.5,  // 降低最大延迟阈值
+        liveBufferLatencyMinRemain: 0.1,   // 降低目标剩余缓冲
+        lazyLoad: false,
+        seekType: 'range'
       }
     );
     player.on(flvjs.Events.ERROR, (t, d) => setError(`${t}: ${d}`));
@@ -131,15 +133,20 @@ function OutputView() {
     const tryPlay = () => v?.play?.().catch(() => {});
     v.addEventListener('loadeddata', tryPlay, { once: true });
 
-    // 兜底追播:每秒检查 buffered 末端与 currentTime 差距,>1.5s 直接 seek 到末端
-    // flv.js 内置追播仅靠 playbackRate,极端抖动下会失效;seek 更硬核
+    // 兜底追播:更频繁地检查并采用更激进的策略
     const catchUpTimer = setInterval(() => {
       if (!v || v.paused || !v.buffered.length) return;
       const liveEdge = v.buffered.end(v.buffered.length - 1);
-      if (liveEdge - v.currentTime > 1.5) {
-        v.currentTime = liveEdge - 0.2;
+      const lag = liveEdge - v.currentTime;
+      // 更激进的追播策略
+      if (lag > 0.8) {
+        v.currentTime = liveEdge - 0.1;  // 直接跳到接近实时位置
+      } else if (lag > 0.5) {
+        v.playbackRate = 1.2;  // 轻微加速
+      } else {
+        v.playbackRate = 1.0;  // 恢复正常
       }
-    }, 1000);
+    }, 500);  // 更高频率检查
 
     playerRef.current = player;
 
