@@ -27,6 +27,12 @@ body.output-mode #root {
   background: #000;
 }
 
+.output-image {
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 .output-msg {
   position: absolute;
   inset: 0;

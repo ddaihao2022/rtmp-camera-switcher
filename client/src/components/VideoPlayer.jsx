@@ -14,16 +14,18 @@ async function patchLocalSettings(streamKey, patch) {
   });
 }
 
-// ─── 本地文件播放器（原生 video / audio 标签） ────────────────────────────────
+// ─── 本地文件播放器（原生 video / audio / img） ──────────────────────────────
 function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount, onEnded }) {
   const mediaRef = useRef(null);
   const wrapperRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const isAudio = stream.fileType === 'audio';
+  const isImage = stream.fileType === 'image';
   const loop = stream.loop ?? false;
   const autoplay = stream.autoplay ?? true;
   const playbackRate = stream.playbackRate ?? 1.0;
+  const duration = Number(stream.duration ?? (isImage ? 5 : 0));
 
   // 构建可访问的 URL
   const mediaUrl = stream.filePath?.startsWith('blob:')
@@ -42,22 +44,29 @@ function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount, onEnded })
     return () => onVideoUnmount?.(stream.streamKey);
   }, [stream.streamKey, onVideoReady, onVideoUnmount]);
 
-  // 同步播放设置到 media 元素
+  // 同步播放设置到 media 元素（图片无 playbackRate）
   useEffect(() => {
     const el = mediaRef.current;
-    if (!el) return;
+    if (!el || isImage) return;
     el.loop = loop;
     el.playbackRate = playbackRate;
-  }, [loop, playbackRate]);
+  }, [loop, playbackRate, isImage]);
 
   // 播放结束回调（用于顺序播放）
   useEffect(() => {
     const el = mediaRef.current;
-    if (!el || loop) return;
+    if (!el || loop || isImage) return;
     const handleEnded = () => onEnded?.(stream.streamKey);
     el.addEventListener('ended', handleEnded);
     return () => el.removeEventListener('ended', handleEnded);
-  }, [stream.streamKey, loop, onEnded]);
+  }, [stream.streamKey, loop, onEnded, isImage]);
+
+  // 图片：非持续显示时，停留 duration 秒后切换下一条
+  useEffect(() => {
+    if (!isImage || loop || duration <= 0) return;
+    const timer = setTimeout(() => onEnded?.(stream.streamKey), duration * 1000);
+    return () => clearTimeout(timer);
+  }, [isImage, loop, duration, stream.streamKey, onEnded]);
 
   const toggleFullscreen = () => {
     const el = wrapperRef.current;
@@ -73,8 +82,8 @@ function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount, onEnded })
     e.stopPropagation();
     const next = !loop;
     await patchLocalSettings(stream.streamKey, { loop: next });
-    if (mediaRef.current) mediaRef.current.loop = next;
-  }, [stream.streamKey, loop]);
+    if (mediaRef.current && !isImage) mediaRef.current.loop = next;
+  }, [stream.streamKey, loop, isImage]);
 
   const handleCycleRate = useCallback(async (e) => {
     e.stopPropagation();
@@ -85,25 +94,36 @@ function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount, onEnded })
   }, [stream.streamKey, playbackRate]);
 
   const displayName = stream.fileName || stream.streamKey;
+  const typeLabel = isAudio ? '音频' : isImage ? '图片' : '视频';
+  const typeIcon = isAudio ? '🎵' : isImage ? '🖼' : '🎬';
 
   return (
     <div className={`video-player-container ${compact ? 'compact' : ''}`}>
       <div className="video-header">
         <h2 title={displayName}>{compact ? displayName.slice(0, 20) : displayName}</h2>
         <div className="video-header-actions">
-          {/* 循环切换按钮 */}
-          <button
-            className={`player-ctrl-btn ${loop ? 'player-ctrl-btn--on' : ''}`}
-            onClick={handleToggleLoop}
-            title={loop ? '循环：开启（点击关闭）' : '循环：关闭（点击开启）'}
-          >🔁</button>
-          {/* 速率循环按钮 */}
-          <button
-            className={`player-ctrl-btn player-ctrl-btn--rate ${playbackRate !== 1.0 ? 'player-ctrl-btn--on' : ''}`}
-            onClick={handleCycleRate}
-            title={`播放速率 ${playbackRate}x（点击切换）`}
-          >{playbackRate}x</button>
-          <span className="live-badge local-badge">{isAudio ? '🎵 音频' : '🎬 本地'}</span>
+          {!isImage && (
+            <button
+              className={`player-ctrl-btn ${loop ? 'player-ctrl-btn--on' : ''}`}
+              onClick={handleToggleLoop}
+              title={loop ? '循环：开启（点击关闭）' : '循环：关闭（点击开启）'}
+            >🔁</button>
+          )}
+          {isImage && (
+            <button
+              className={`player-ctrl-btn ${loop ? 'player-ctrl-btn--on' : ''}`}
+              onClick={handleToggleLoop}
+              title={loop ? '持续显示（点击关闭）' : '点击设为持续显示'}
+            >🖼</button>
+          )}
+          {!isImage && (
+            <button
+              className={`player-ctrl-btn player-ctrl-btn--rate ${playbackRate !== 1.0 ? 'player-ctrl-btn--on' : ''}`}
+              onClick={handleCycleRate}
+              title={`播放速率 ${playbackRate}x（点击切换）`}
+            >{playbackRate}x</button>
+          )}
+          <span className="live-badge local-badge">{typeIcon} {typeLabel}</span>
           {!isAudio && (
             <button className="fullscreen-btn" onClick={toggleFullscreen}>
               {isFullscreen ? '⤓ 退出全屏' : '⛶ 全屏'}
@@ -112,7 +132,15 @@ function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount, onEnded })
         </div>
       </div>
       <div className="video-wrapper" ref={wrapperRef} onDoubleClick={!isAudio ? toggleFullscreen : undefined}>
-        {isAudio ? (
+        {isImage ? (
+          <img
+            ref={mediaRef}
+            src={mediaUrl}
+            alt={displayName}
+            className="video-player local-image"
+            draggable={false}
+          />
+        ) : isAudio ? (
           <audio ref={mediaRef} src={mediaUrl} controls className="local-audio"
             autoPlay={autoplay} loop={loop} />
         ) : (
@@ -123,8 +151,12 @@ function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount, onEnded })
       {!compact && (
         <div className="video-info">
           <p>文件: {stream.fileName}</p>
-          <p>类型: {isAudio ? '音频' : '视频'}</p>
-          <p>循环: {loop ? '开启' : '关闭'} | 自动播放: {autoplay ? '开启' : '关闭'} | 速率: {playbackRate}x</p>
+          <p>类型: {typeLabel}</p>
+          {isImage ? (
+            <p>显示: {loop ? '持续' : duration > 0 ? `${duration} 秒后切换` : '常驻'}</p>
+          ) : (
+            <p>循环: {loop ? '开启' : '关闭'} | 自动播放: {autoplay ? '开启' : '关闭'} | 速率: {playbackRate}x</p>
+          )}
         </div>
       )}
     </div>

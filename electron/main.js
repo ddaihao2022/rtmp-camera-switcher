@@ -304,14 +304,20 @@ ipcMain.handle('record:save', async (_e, { buffer, ext }) => {
   return { success: true, filePath: result.filePath };
 });
 
-// 本地媒体文件选择
-ipcMain.handle('dialog:openFile', async () => {  const result = await dialog.showOpenDialog(controlWin, {
-    title: '选择音视频文件',
+// 本地媒体文件选择（音视频 + 图片）
+ipcMain.handle('dialog:openFile', async () => {
+  const result = await dialog.showOpenDialog(controlWin, {
+    title: '选择媒体文件（音视频 / 图片）',
     properties: ['openFile', 'multiSelections'],
     filters: [
-      { name: '音视频文件', extensions: ['mp4','mov','mkv','avi','webm','m4v','ts','flv','wmv','mp3','aac','wav','flac','m4a','ogg'] },
+      { name: '媒体文件', extensions: [
+        'mp4','mov','mkv','avi','webm','m4v','ts','flv','wmv',
+        'mp3','aac','wav','flac','m4a','ogg',
+        'png','jpg','jpeg','gif','webp','bmp','svg','ico','avif',
+      ]},
       { name: '视频', extensions: ['mp4','mov','mkv','avi','webm','m4v','ts','flv','wmv'] },
       { name: '音频', extensions: ['mp3','aac','wav','flac','m4a','ogg'] },
+      { name: '图片', extensions: ['png','jpg','jpeg','gif','webp','bmp','svg','ico','avif'] },
     ]
   });
   if (result.canceled) return null;

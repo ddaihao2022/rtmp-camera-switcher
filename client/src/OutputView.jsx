@@ -178,6 +178,8 @@ function OutputView() {
                   loop={localItem.loop ?? false} controls className="output-audio"
                   ref={el => { if (el) el.playbackRate = localItem.playbackRate ?? 1.0; }} />
               </div>
+            ) : localItem.fileType === 'image' ? (
+              <img src={localUrl} alt={localItem.fileName} className="output-video output-image" draggable={false} />
             ) : (
               <video src={localUrl} className="output-video"
                 autoPlay={localItem.autoplay ?? true} playsInline controls={false}

@@ -558,6 +558,14 @@
   background: #000;
 }
 
+/* 本地图片源 */
+.video-player.local-image {
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+  max-height: 100%;
+}
+
 .play-overlay {
   position: absolute;
   top: 0;
