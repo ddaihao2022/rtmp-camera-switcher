@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { io } from 'socket.io-client';
 import flvjs from 'flv.js';
+import { buildFlvUrl, getUnsupportedCodecMessage, isBrowserPlayableStream } from '../utils/stream';
+import { FLV_PREVIEW_OPTIONS, startCatchUp, tryPlay } from '../utils/lowLatency';
+import ScoreboardOverlay from './ScoreboardOverlay';
 
 const FLV_HOST = 'http://localhost:8000';
 
@@ -17,6 +21,17 @@ function OutputMonitor({ streamKey, streams }) {
   const [collapsed, setCollapsed] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [error, setError] = useState(null);
+  const [scoreboard, setScoreboard] = useState(null);
+
+  useEffect(() => {
+    fetch('http://localhost:3001/api/scoreboard')
+      .then(r => r.json())
+      .then(setScoreboard)
+      .catch(() => {});
+    const socket = io('http://localhost:3001');
+    socket.on('scoreboard:update', setScoreboard);
+    return () => socket.disconnect();
+  }, []);
 
   // 用户主动关掉之后,如果输出流换成另一路,自动重开
   useEffect(() => {
@@ -41,47 +56,37 @@ function OutputMonitor({ streamKey, streams }) {
     if (!streamKey || hidden || collapsed) return;
     if (!videoRef.current || !flvjs.isSupported()) return;
 
-    const matched = streams.find(s => s.streamKey === streamKey);
-    const url = matched?.flvPath
-      ? `${FLV_HOST}${matched.flvPath}`
-      : `${FLV_HOST}/${streamKey}.flv`;
+    const matched = streams.find(s => s.streamKey === streamKey) || { streamKey };
+    if (!isBrowserPlayableStream(matched)) {
+      setError(getUnsupportedCodecMessage(matched));
+      return;
+    }
+    const url = buildFlvUrl(matched, FLV_HOST);
 
     const player = flvjs.createPlayer(
       { type: 'flv', url, isLive: true, hasAudio: false, hasVideo: true },
-      {
-        enableWorker: false,
-        enableStashBuffer: false,
-        stashInitialSize: 128,
-        autoCleanupSourceBuffer: true,
-        autoCleanupMaxBackwardDuration: 3,
-        autoCleanupMinBackwardDuration: 2,
-        liveBufferLatencyChasing: true,
-        liveBufferLatencyMaxLatency: 1.0,
-        liveBufferLatencyMinRemain: 0.3
-      }
+      FLV_PREVIEW_OPTIONS
     );
     player.on(flvjs.Events.ERROR, (t, d) => setError(`${t}: ${d}`));
     player.attachMediaElement(videoRef.current);
     player.load();
 
     const v = videoRef.current;
-    const tryPlay = () => v?.play?.().catch(() => {});
-    v.addEventListener('loadeddata', tryPlay, { once: true });
+    const tryPlayOnce = () => tryPlay(v);
+    v.addEventListener('loadeddata', tryPlayOnce, { once: true });
 
-    // 兜底追播,防止局部抖动后越积越长
-    const catchUpTimer = setInterval(() => {
-      if (!v || v.paused || !v.buffered.length) return;
-      const liveEdge = v.buffered.end(v.buffered.length - 1);
-      if (liveEdge - v.currentTime > 1.5) {
-        v.currentTime = liveEdge - 0.2;
-      }
-    }, 1000);
+    const stopCatchUp = startCatchUp(v, {
+      jumpLag: 0.6,
+      softLag: 0.35,
+      intervalMs: 400,
+      softRate: 1.25,
+    });
 
     playerRef.current = player;
 
     return () => {
-      clearInterval(catchUpTimer);
-      v?.removeEventListener('loadeddata', tryPlay);
+      stopCatchUp();
+      v?.removeEventListener('loadeddata', tryPlayOnce);
       safeDestroy();
     };
   }, [streamKey, streams, hidden, collapsed]);
@@ -123,6 +128,7 @@ function OutputMonitor({ streamKey, streams }) {
             muted
             playsInline
           />
+          <ScoreboardOverlay config={scoreboard} />
           {!isLive && (
             <div className="output-monitor-msg">等待 {streamKey} 上线…</div>
           )}

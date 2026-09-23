@@ -3,13 +3,29 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
   listDisplays: () => ipcRenderer.invoke('displays:list'),
-  openOutput: (displayId) => ipcRenderer.invoke('output:open', displayId),
-  closeOutput: () => ipcRenderer.invoke('output:close'),
+  /**
+   * 打开一路 HDMI 输出
+   * @param {number} displayId
+   * @param {'fullscreen'|'window'} mode
+   * @param {{ source?: string|null }} [opts] source 固定信号源；省略/空则跟随 PROGRAM
+   */
+  openOutput: (displayId, mode = 'fullscreen', opts = {}) =>
+    ipcRenderer.invoke('output:open', displayId, mode, opts),
+  /** 批量打开多路：[{ displayId, mode?, source? }] */
+  openMultiOutputs: (routes) => ipcRenderer.invoke('output:openMulti', routes),
+  /** 关闭一路或全部（不传 displayId 关全部） */
+  closeOutput: (displayId) => ipcRenderer.invoke('output:close', displayId),
   getOutputStatus: () => ipcRenderer.invoke('output:status'),
+  listOutputs: () => ipcRenderer.invoke('outputs:list'),
   onOutputClosed: (cb) => {
-    const handler = () => cb();
+    const handler = (_e, data) => cb(data);
     ipcRenderer.on('output:closed', handler);
     return () => ipcRenderer.removeListener('output:closed', handler);
+  },
+  onOutputsChanged: (cb) => {
+    const handler = (_e, outputs) => cb(outputs);
+    ipcRenderer.on('output:changed', handler);
+    return () => ipcRenderer.removeListener('output:changed', handler);
   },
   onDisplaysChanged: (cb) => {
     const handler = () => cb();

@@ -4,5 +4,7 @@ client/dist/
 dist_electron/
 media/
 *.log
+*.err
 .DS_Store
 .env
+server-smoke.pid

@@ -87,8 +87,10 @@ const DEV_URL = 'http://localhost:5173';
 const PROD_INDEX = path.join(__dirname, '..', 'client', 'dist', 'index.html');
 
 let controlWin = null;
-let outputWin = null;
 let audioWin = null;
+// 多路 HDMI 输出：Map<displayId, { win, mode, source }>
+const outputWins = new Map();
+let outputMode = null; // 兼容旧状态（任意一路的 mode）
 
 function openAudioWindow() {
   if (audioWin && !audioWin.isDestroyed()) { audioWin.focus(); return; }
@@ -110,11 +112,17 @@ function openAudioWindow() {
   audioWin.on('closed', () => { audioWin = null; });
 }
 
-function loadView(win, view) {
+function loadView(win, view, extraQuery = {}) {
+  const params = new URLSearchParams();
+  if (view) params.set('view', view);
+  for (const [k, v] of Object.entries(extraQuery)) {
+    if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+  }
+  const qs = params.toString();
   if (isDev) {
-    win.loadURL(view ? `${DEV_URL}/?view=${view}` : DEV_URL);
+    win.loadURL(qs ? `${DEV_URL}/?${qs}` : DEV_URL);
   } else {
-    win.loadFile(PROD_INDEX, view ? { search: `?view=${view}` } : {});
+    win.loadFile(PROD_INDEX, qs ? { search: `?${qs}` } : {});
   }
 }
 
@@ -158,7 +166,7 @@ function createControlWindow() {
   loadView(controlWin, null);
   controlWin.on('closed', () => {
     controlWin = null;
-    if (outputWin) outputWin.close();
+    closeAllOutputWindows();
   });
 }
 
@@ -215,39 +223,131 @@ function buildMenu() {
   ]);
 }
 
-function createOutputWindow(displayId) {
-  if (outputWin) { outputWin.close(); outputWin = null; }
-
+function getTargetDisplay(displayId) {
   const displays = screen.getAllDisplays();
   const primaryId = screen.getPrimaryDisplay().id;
-  let target = displays.find(d => d.id === displayId);
+  let target = displays.find((d) => d.id === displayId);
   if (!target) {
-    target = displays.find(d => d.id !== primaryId) || displays[0];
+    target = displays.find((d) => d.id !== primaryId) || displays[0];
+  }
+  return target;
+}
+
+function getWindowedOutputBounds(target) {
+  const workArea = target.workArea || target.bounds;
+  const maxWidth = Math.max(640, Math.floor(workArea.width * 0.9));
+  const maxHeight = Math.max(360, Math.floor(workArea.height * 0.9));
+
+  let width = Math.min(1280, maxWidth);
+  let height = Math.round(width * 9 / 16);
+
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = Math.round(height * 16 / 9);
   }
 
-  outputWin = new BrowserWindow({
-    x: target.bounds.x,
-    y: target.bounds.y,
-    width: target.bounds.width,
-    height: target.bounds.height,
-    fullscreen: true,
-    frame: false,
+  return {
+    x: workArea.x + Math.max(0, Math.floor((workArea.width - width) / 2)),
+    y: workArea.y + Math.max(0, Math.floor((workArea.height - height) / 2)),
+    width,
+    height,
+  };
+}
+
+function notifyOutputsChanged() {
+  if (controlWin && !controlWin.isDestroyed()) {
+    controlWin.webContents.send('output:changed', listOutputStatus());
+  }
+}
+
+function listOutputStatus() {
+  return [...outputWins.entries()].map(([displayId, entry]) => ({
+    displayId,
+    open: !entry.win.isDestroyed(),
+    mode: entry.mode,
+    source: entry.source || null,
+  }));
+}
+
+function closeOutputWindow(displayId) {
+  const entry = outputWins.get(displayId);
+  if (!entry) return false;
+  outputWins.delete(displayId);
+  if (entry.win && !entry.win.isDestroyed()) entry.win.close();
+  outputMode = outputWins.size ? [...outputWins.values()][0].mode : null;
+  notifyOutputsChanged();
+  if (controlWin && !controlWin.isDestroyed()) {
+    controlWin.webContents.send('output:closed', { displayId });
+  }
+  return true;
+}
+
+function closeAllOutputWindows() {
+  for (const id of [...outputWins.keys()]) closeOutputWindow(id);
+}
+
+/**
+ * 在指定显示器上打开/重建一路 HDMI 输出。
+ * source 非空则该路固定播指定流；空则跟随主输出(PGM)。
+ */
+function createOutputWindow(displayId, mode = 'fullscreen', opts = {}) {
+  const source = opts.source || null;
+  const view = opts.view || 'output';
+
+  // 同一显示器上已有输出 → 先关再开（等价于切换信号源）
+  if (outputWins.has(displayId)) {
+    const prev = outputWins.get(displayId);
+    outputWins.delete(displayId);
+    if (prev.win && !prev.win.isDestroyed()) {
+      prev.win.removeAllListeners('closed');
+      prev.win.close();
+    }
+  }
+
+  const target = getTargetDisplay(displayId);
+  const isWindowed = mode === 'window';
+  const bounds = isWindowed ? getWindowedOutputBounds(target) : target.bounds;
+
+  const win = new BrowserWindow({
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    fullscreen: !isWindowed,
+    frame: isWindowed,
+    resizable: isWindowed,
+    minimizable: isWindowed,
+    maximizable: isWindowed,
+    movable: true,
     autoHideMenuBar: true,
     backgroundColor: '#000000',
-    title: 'HDMI 输出',
+    title: source ? `HDMI 输出 · ${source}` : 'HDMI 输出 · PROGRAM',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false
     }
   });
-  loadView(outputWin, 'output');
-  outputWin.on('closed', () => {
-    outputWin = null;
-    if (controlWin && !controlWin.isDestroyed()) {
-      controlWin.webContents.send('output:closed');
+
+  outputWins.set(displayId, { win, mode, source });
+  outputMode = mode;
+
+  loadView(win, view, source ? { source } : {});
+  if (isWindowed) win.setMenuBarVisibility(false);
+
+  win.on('closed', () => {
+    if (outputWins.get(displayId)?.win === win) {
+      outputWins.delete(displayId);
+      outputMode = outputWins.size ? [...outputWins.values()][0].mode : null;
+      notifyOutputsChanged();
+      if (controlWin && !controlWin.isDestroyed()) {
+        controlWin.webContents.send('output:closed', { displayId });
+      }
     }
   });
+
+  notifyOutputsChanged();
+  return win;
 }
 
 // ─── IPC ──────────────────────────────────────────────────────────────────────
@@ -261,17 +361,38 @@ ipcMain.handle('displays:list', () => {
   }));
 });
 
-ipcMain.handle('output:open', (_e, displayId) => {
-  createOutputWindow(displayId);
-  return { success: true };
+// 兼容旧签名 openOutput(displayId, mode) 与新签名 openOutput(displayId, mode, { source })
+ipcMain.handle('output:open', (_e, displayId, mode = 'fullscreen', opts = {}) => {
+  createOutputWindow(displayId, mode, opts || {});
+  return { success: true, outputs: listOutputStatus() };
 });
 
-ipcMain.handle('output:close', () => {
-  if (outputWin) outputWin.close();
-  return { success: true };
+// 批量：多块副屏一次打开（可选固定不同信号源） [{ displayId, mode?, source? }]
+ipcMain.handle('output:openMulti', (_e, routes = []) => {
+  for (const r of routes) {
+    if (r?.displayId == null) continue;
+    createOutputWindow(r.displayId, r.mode || 'fullscreen', { source: r.source || null });
+  }
+  return { success: true, outputs: listOutputStatus() };
 });
 
-ipcMain.handle('output:status', () => ({ open: !!outputWin }));
+// closeOutput() 关全部；closeOutput(displayId) 关指定一路
+ipcMain.handle('output:close', (_e, displayId) => {
+  if (displayId == null) {
+    closeAllOutputWindows();
+  } else {
+    closeOutputWindow(displayId);
+  }
+  return { success: true, outputs: listOutputStatus() };
+});
+
+ipcMain.handle('output:status', () => ({
+  open: outputWins.size > 0,
+  mode: outputMode,
+  outputs: listOutputStatus(),
+}));
+
+ipcMain.handle('outputs:list', () => listOutputStatus());
 
 ipcMain.handle('log:getStatus', async () => ({ verbose: await getLogStatus() }));
 
@@ -304,14 +425,20 @@ ipcMain.handle('record:save', async (_e, { buffer, ext }) => {
   return { success: true, filePath: result.filePath };
 });
 
-// 本地媒体文件选择
-ipcMain.handle('dialog:openFile', async () => {  const result = await dialog.showOpenDialog(controlWin, {
-    title: '选择音视频文件',
+// 本地媒体文件选择（音视频 + 图片）
+ipcMain.handle('dialog:openFile', async () => {
+  const result = await dialog.showOpenDialog(controlWin, {
+    title: '选择媒体文件（音视频 / 图片）',
     properties: ['openFile', 'multiSelections'],
     filters: [
-      { name: '音视频文件', extensions: ['mp4','mov','mkv','avi','webm','m4v','ts','flv','wmv','mp3','aac','wav','flac','m4a','ogg'] },
+      { name: '媒体文件', extensions: [
+        'mp4','mov','mkv','avi','webm','m4v','ts','flv','wmv',
+        'mp3','aac','wav','flac','m4a','ogg',
+        'png','jpg','jpeg','gif','webp','bmp','svg','ico','avif',
+      ]},
       { name: '视频', extensions: ['mp4','mov','mkv','avi','webm','m4v','ts','flv','wmv'] },
       { name: '音频', extensions: ['mp3','aac','wav','flac','m4a','ogg'] },
+      { name: '图片', extensions: ['png','jpg','jpeg','gif','webp','bmp','svg','ico','avif'] },
     ]
   });
   if (result.canceled) return null;
@@ -334,7 +461,10 @@ app.whenReady().then(() => {
   });
   screen.on('display-removed', () => {
     if (controlWin && !controlWin.isDestroyed()) controlWin.webContents.send('displays:changed');
-    if (outputWin) outputWin.close();
+    for (const [id, entry] of [...outputWins.entries()]) {
+      if (!entry.win || entry.win.isDestroyed()) outputWins.delete(id);
+    }
+    notifyOutputsChanged();
   });
 });
 

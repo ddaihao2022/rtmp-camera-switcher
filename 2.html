@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>高端科技产品海报</title>
+<script src="assets/3fa48481.css"></script>
+<style>
+body{margin:0;background:#03040a}
+.poster{aspect-ratio:9/16;width:min(100vw,56.25vh);height:auto}
+.glow{background:radial-gradient(circle at 50% 35%,rgba(139,92,246,.35),transparent 35%),radial-gradient(circle at 80% 58%,rgba(45,212,191,.26),transparent 28%),linear-gradient(180deg,#050713,#070815 55%,#02030a)}
+.trail{filter:blur(1px);opacity:.65}
+.camera{background:linear-gradient(145deg,#2b2f3a,#080a10 55%,#000);box-shadow:0 18px 45px rgba(0,0,0,.55),inset 0 1px 1px rgba(255,255,255,.25)}
+.lens{background:radial-gradient(circle,#6ee7f9 0 10%,#111827 18%,#020617 48%,#475569 55%,#050505 72%)}
+.screen{background:linear-gradient(145deg,#0a1020,#030712);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1),0 30px 70px rgba(0,0,0,.6)}
+.feed{background:linear-gradient(135deg,rgba(20,184,166,.18),rgba(124,58,237,.12)),radial-gradient(circle at 70% 30%,rgba(255,255,255,.16),transparent 22%),#07111f}
+</style>
+</head>
+<body class="min-h-screen flex items-center justify-center overflow-hidden">
+<main class="poster relative overflow-hidden glow text-white font-sans">
+<div class="absolute inset-0 opacity-30" style="background-image:radial-gradient(circle,rgba(255,255,255,.5) 1px,transparent 1px);background-size:34px 34px"></div>
+<div class="absolute top-10 left-0 right-0 text-center px-8 z-20">
+<div class="text-xs tracking-[.35em] text-teal-200/80 mb-4">高端影像科技</div>
+<h1 class="text-4xl md:text-5xl font-semibold leading-tight tracking-tight">多机位实时影像中枢</h1>
+<p class="mt-4 text-sm md:text-base text-slate-300 leading-relaxed">深空暗色美学，连接每一台 DJI 相机的无线实时数据流。</p>
+</div>
+
+<svg class="absolute inset-0 w-full h-full z-0" viewBox="0 0 900 1600" fill="none">
+<path class="trail" d="M240 470 C365 620 405 720 450 850" stroke="url(#a)" stroke-width="8" stroke-linecap="round"/>
+<path class="trail" d="M690 570 C585 650 535 740 482 850" stroke="url(#b)" stroke-width="8" stroke-linecap="round"/>
+<path class="trail" d="M225 1030 C330 970 385 920 440 875" stroke="url(#c)" stroke-width="8" stroke-linecap="round"/>
+<defs>
+<linearGradient id="a" x1="240" y1="470" x2="450" y2="850"><stop stop-color="#8b5cf6" stop-opacity=".15"/><stop offset="1" stop-color="#2dd4bf"/></linearGradient>
+<linearGradient id="b" x1="690" y1="570" x2="482" y2="850"><stop stop-color="#2dd4bf" stop-opacity=".1"/><stop offset="1" stop-color="#a78bfa"/></linearGradient>
+<linearGradient id="c" x1="225" y1="1030" x2="440" y2="875"><stop stop-color="#8b5cf6" stop-opacity=".12"/><stop offset="1" stop-color="#5eead4"/></linearGradient>
+</defs>
+</svg>
+
+<div class="camera absolute z-10 top-[25%] left-[12%] w-28 h-20 rounded-2xl rotate-[-18deg] p-3">
+<div class="absolute -top-3 left-8 w-10 h-4 rounded-t-lg bg-slate-800"></div>
+<div class="lens w-12 h-12 rounded-full mx-auto mt-1"></div>
+<div class="absolute bottom-2 left-3 text-[10px] text-slate-300">DJI</div>
+</div>
+
+<div class="camera absolute z-10 top-[32%] right-[9%] w-32 h-20 rounded-2xl rotate-[16deg] p-3">
+<div class="absolute -right-3 top-6 w-5 h-8 rounded-r-lg bg-slate-800"></div>
+<div class="lens w-12 h-12 rounded-full ml-5 mt-1"></div>
+<div class="absolute bottom-2 right-4 text-[10px] text-slate-300">DJI</div>
+</div>
+
+<div class="camera absolute z-10 bottom-[27%] left-[10%] w-30 h-20 rounded-2xl rotate-[12deg] p-3">
+<div class="absolute -left-3 top-6 w-5 h-8 rounded-l-lg bg-slate-800"></div>
+<div class="lens w-12 h-12 rounded-full ml-8 mt-1"></div>
+<div class="absolute bottom-2 left-4 text-[10px] text-slate-300">DJI</div>
+</div>
+
+<section class="absolute left-1/2 top-[51%] -translate-x-1/2 -translate-y-1/2 z-20 w-[82%]">
+<div class="screen rounded-3xl p-3 border border-white/10">
+<div class="rounded-2xl bg-black/70 p-3">
+<div class="flex items-center justify-between mb-3">
+<div class="text-xs text-slate-300">实时多机位看板</div>
+<div class="flex gap-1.5"><span class="w-2 h-2 rounded-full bg-red-400"></span><span class="w-2 h-2 rounded-full bg-yellow-300"></span><span class="w-2 h-2 rounded-full bg-teal-300"></span></div>
+</div>
+<div class="grid grid-cols-2 gap-2">
+<div class="feed rounded-xl h-24 p-2 relative overflow-hidden">
+<div class="absolute inset-x-3 bottom-3 h-1 bg-teal-300/50 rounded"></div>
+<div class="text-[10px] text-slate-200">画面一</div>
+</div>
+<div class="feed rounded-xl h-24 p-2 relative overflow-hidden">
+<div class="absolute right-4 top-8 w-10 h-10 rounded-full border border-purple-300/40"></div>
+<div class="text-[10px] text-slate-200">画面二</div>
+</div>
+<div class="feed rounded-xl h-24 p-2 relative overflow-hidden">
+<div class="absolute left-5 bottom-4 w-16 h-8 rounded-full bg-white/10 blur-sm"></div>
+<div class="text-[10px] text-slate-200">画面三</div>
+</div>
+<div class="feed rounded-xl h-24 p-2 relative overflow-hidden">
+<div class="absolute right-5 bottom-4 w-12 h-12 rounded-lg border border-teal-200/40 rotate-12"></div>
+<div class="text-[10px] text-slate-200">画面四</div>
+</div>
+</div>
+<div class="mt-3 grid grid-cols-2 gap-2 text-[10px]">
+<div class="rounded-lg bg-white/5 border border-white/10 p-2 text-teal-100">延迟：XX毫秒</div>
+<div class="rounded-lg bg-white/5 border border-white/10 p-2 text-purple-100">帧率：XX帧/秒</div>
+</div>
+</div>
+</div>
+<div class="mx-auto w-[92%] h-5 rounded-b-3xl bg-gradient-to-b from-slate-500 to-slate-950 shadow-2xl"></div>
+<div class="mx-auto w-[48%] h-2 rounded-b-full bg-slate-900"></div>
+</section>
+
+<div class="absolute bottom-16 left-0 right-0 text-center px-10 z-20">
+<p class="text-sm text-slate-300 mb-5">清晰、迅捷、稳定的现场影像协同体验。</p>
+<div class="inline-flex items-center justify-center rounded-full border border-teal-300/40 bg-white/10 px-6 py-3 text-sm font-medium text-teal-50 backdrop-blur">开启专业级实时监看</div>
+</div>
+<div class="absolute -bottom-24 left-1/2 -translate-x-1/2 w-[82%] h-48 bg-teal-400/20 blur-3xl rounded-full"></div>
+</main>
+</body>
+</html>

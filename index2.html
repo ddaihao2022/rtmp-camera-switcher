@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RTMP Camera Switcher - 专业多机位直播制作系统</title>
+<link rel="icon" type="image/x-icon" href="tx.ico">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:ui-sans-serif,system-ui,-apple-system,"Microsoft YaHei",sans-serif;background:#020617;color:#fff;line-height:1.6}
+.container{max-width:1200px;margin:0 auto;padding:0 24px}
+nav{position:fixed;top:0;left:0;right:0;z-index:50;background:linear-gradient(135deg,rgba(255,255,255,.08),rgba(255,255,255,.02));backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.1)}
+.nav-inner{max-width:1200px;margin:0 auto;padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
+.logo-box{display:flex;align-items:center;gap:8px}
+.logo-icon{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#38bdf8,#2563eb);display:flex;align-items:center;justify-content:center;font-weight:bold}
+.nav-btn{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);text-decoration:none;color:#fff;transition:background .3s}
+.nav-btn:hover{background:rgba(255,255,255,.1)}
+.hero{min-height:100vh;display:flex;align-items:center;padding:80px 24px;position:relative;overflow:hidden}
+.hero-bg{position:absolute;inset:0;background:radial-gradient(circle at 50% 30%,#1e3a8a 0%,#0f172a 45%,#020617 100%);z-index:-1}
+.hero-content{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center}
+.badge{display:inline-flex;align-items:center;gap:8px;padding:4px 12px;border-radius:999px;border:1px solid rgba(56,189,248,.3);background:rgba(56,189,248,.1);color:#7dd3fc;font-size:14px;margin-bottom:24px}
+.pulse{width:8px;height:8px;border-radius:50%;background:#38bdf8;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+h1{font-size:56px;font-weight:bold;line-height:1.1;margin-bottom:24px}
+.hero-text{font-size:20px;color:#cbd5e1;margin-bottom:32px;line-height:1.8}
+.tags{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:40px}
+.tag{padding:8px 16px;border-radius:8px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);font-size:14px}
+.btn-group{display:flex;gap:16px;flex-wrap:wrap}
+.btn-primary{padding:16px 32px;border-radius:12px;background:linear-gradient(to right,#0ea5e9,#2563eb);font-weight:600;text-decoration:none;color:#fff;display:inline-block;box-shadow:0 10px 40px rgba(37,99,235,.3);transition:transform .3s}
+.btn-primary:hover{transform:translateY(-2px)}
+.btn-secondary{padding:16px 32px;border-radius:12px;border:1px solid rgba(255,255,255,.2);font-weight:600;text-decoration:none;color:#fff;display:inline-block;transition:background .3s}
+.btn-secondary:hover{background:rgba(255,255,255,.05)}
+.screen-box{position:relative;border-radius:16px;background:#0f172a;padding:16px;border:1px solid rgba(255,255,255,.1);box-shadow:0 0 80px rgba(56,189,248,.25)}
+.screen-header{display:flex;align-items:center;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.1)}
+.dot{width:12px;height:12px;border-radius:50%;opacity:.8}
+.dot-red{background:#f87171}
+.dot-yellow{background:#facc15}
+.dot-green{background:#4ade80}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.camera-box{position:relative;height:128px;border-radius:8px;padding:8px;border:1px solid;overflow:hidden}
+.camera-1{background:linear-gradient(135deg,rgba(249,115,22,.2),#020617);border-color:rgba(251,146,60,.3)}
+.camera-2{background:linear-gradient(135deg,rgba(6,182,212,.2),#020617);border-color:rgba(6,182,212,.2)}
+.camera-3{background:linear-gradient(135deg,rgba(168,85,247,.2),#020617);border-color:rgba(168,85,247,.2)}
+.camera-4{background:linear-gradient(135deg,rgba(16,185,129,.2),#020617);border-color:rgba(16,185,129,.2)}
+.camera-label{font-size:12px}
+.section{padding:128px 24px;position:relative}
+.section-bg{position:absolute;inset:0;background:linear-gradient(to bottom,#020617,#0f172a,#020617);z-index:-1}
+.section-title-small{display:inline-block;color:#38bdf8;font-size:14px;margin-bottom:16px}
+.section-title{font-size:48px;font-weight:bold;margin-bottom:16px;text-align:center}
+.section-desc{font-size:20px;color:#94a3b8;text-align:center;margin-bottom:80px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.card{padding:24px;border-radius:16px;background:linear-gradient(135deg,rgba(255,255,255,.05),transparent);border:1px solid rgba(255,255,255,.1);transition:all .3s}
+.card:hover{background:rgba(255,255,255,.1);border-color:rgba(56,189,248,.5)}
+.icon-box{width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#38bdf8,#2563eb);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px}
+.card h3{font-size:20px;font-weight:600;margin-bottom:8px}
+.card p{color:#94a3b8;font-size:15px}
+.use-case{display:flex;align-items:center;gap:12px;padding:16px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);transition:all .3s}
+.use-case:hover{background:rgba(255,255,255,.1)}
+.use-case-icon{font-size:32px}
+.steps{max-width:800px;margin:48px auto 0;border-radius:16px;background:rgba(15,23,42,.5);border:1px solid rgba(255,255,255,.1);padding:32px}
+.step{display:flex;gap:16px;margin-bottom:24px}
+.step:last-child{margin-bottom:0}
+.step-num{width:32px;height:32px;border-radius:50%;background:#0ea5e9;display:flex;align-items:center;justify-content:center;font-weight:bold;flex-shrink:0}
+.step h3{font-weight:600;margin-bottom:4px}
+.step code{font-size:14px;color:#94a3b8;background:rgba(0,0,0,.3);padding:4px 12px;border-radius:4px;display:inline-block}
+footer{border-top:1px solid rgba(255,255,255,.1);padding:48px 24px;text-align:center}
+.footer-inner{max-width:1200px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:24px}
+.footer-links{display:flex;gap:24px}
+.footer-link{color:#94a3b8;text-decoration:none;transition:color .3s}
+.footer-link:hover{color:#fff}
+@media(max-width:768px){
+h1{font-size:36px}
+.hero-content{grid-template-columns:1fr}
+.grid-3{grid-template-columns:1fr}
+.footer-inner{flex-direction:column;text-align:center}
+iframe{height:400px!important}
+}
+</style>
+</head>
+<body>
+
+<nav>
+<div class="nav-inner">
+<div class="logo-box">
+<img src="tx.ico" alt="Logo" style="width:32px;height:32px;border-radius:8px">
+<span style="font-size:18px;font-weight:600">RTMP Camera Switcher</span>
+</div>
+<a href="https://github.com/ddaihao2022/rtmp-camera-switcher" target="_blank" class="nav-btn">
+<svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+GitHub
+</a>
+</div>
+</nav>
+
+<div class="hero">
+<div class="hero-bg"></div>
+<div class="hero-content">
+<div>
+<div class="badge">
+<span class="pulse"></span>
+桌面级多路 RTMP 视频切换台
+</div>
+<h1>专业多机位<br>直播制作系统</h1>
+<p class="hero-text">Electron + React 构建，支持多台设备同时推流并实时预览，任意画面一键输出到 HDMI 显示器。内置音频混音台、本地媒体导入、水印叠加和输出录制功能。</p>
+<div class="tags">
+<span class="tag">多路预览</span>
+<span class="tag">HDMI 输出</span>
+<span class="tag">音频混音</span>
+<span class="tag">实时录制</span>
+</div>
+<div class="btn-group">
+<a href="https://github.com/ddaihao2022/rtmp-camera-switcher" target="_blank" class="btn-primary">立即下载</a>
+<a href="#features" class="btn-secondary">了解更多</a>
+</div>
+</div>
+
+<div class="screen-box">
+<div class="screen-header">
+<div style="display:flex;gap:6px">
+<span class="dot dot-red"></span>
+<span class="dot dot-yellow"></span>
+<span class="dot dot-green"></span>
+</div>
+<span style="font-size:14px;color:#94a3b8">实时多机位监看</span>
+</div>
+<div class="grid-2">
+<div class="camera-box camera-1">
+<div class="camera-label" style="color:#fdba74">机位一 · 主摄像机</div>
+</div>
+<div class="camera-box camera-2">
+<div class="camera-label" style="color:#67e8f9">机位二 · 广角镜头</div>
+</div>
+<div class="camera-box camera-3">
+<div class="camera-label" style="color:#c084fc">机位三 · 特写</div>
+</div>
+<div class="camera-box camera-4">
+<div class="camera-label" style="color:#6ee7b7">机位四 · 顶视图</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div id="features" class="section">
+<div class="section-bg"></div>
+<div class="container">
+<div style="text-align:center;margin-bottom:80px">
+<div class="section-title-small">核心功能</div>
+<h2 class="section-title">一站式多机位制作解决方案</h2>
+<p class="section-desc">从预览到输出，从音频到录制，所有功能集于一身</p>
+</div>
+
+<div class="grid-3">
+<div class="card">
+<div class="icon-box">📺</div>
+<h3>多路预览</h3>
+<p>单屏/网格视图，最多同时预览 4 路，实时监控所有机位画面质量。</p>
+</div>
+<div class="card">
+<div class="icon-box">🖥️</div>
+<h3>HDMI 输出切换</h3>
+<p>任意流全屏输出到第二显示器，切换实时生效，支持数字快捷键。</p>
+</div>
+<div class="card">
+<div class="icon-box">🎚️</div>
+<h3>音频混音台</h3>
+<p>独立窗口，VU 表 + 频谱 + 音量推子 + 静音，不额外拉流。</p>
+</div>
+<div class="card">
+<div class="icon-box">📁</div>
+<h3>本地媒体导入</h3>
+<p>将本地视频/音频作为虚拟流，与直播流同等操作和管理。</p>
+</div>
+<div class="card">
+<div class="icon-box">⏺️</div>
+<h3>输出录制</h3>
+<p>录制当前输出画面，WebM/MP4 格式，系统对话框保存。</p>
+</div>
+<div class="card">
+<div class="icon-box">🖼️</div>
+<h3>水印叠加</h3>
+<p>文字或图片水印，低透明度叠在输出画面，支持位置自定义。</p>
+</div>
+</div>
+</div>
+</div>
+
+<div class="section">
+<div class="section-bg"></div>
+<div class="container">
+<div style="text-align:center;margin-bottom:80px">
+<div class="section-title-small">产品预览</div>
+<h2 class="section-title">沉浸式视觉体验</h2>
+<p class="section-desc">专业级多机位直播制作现场</p>
+</div>
+<div style="display:grid;gap:48px">
+<div style="position:relative;width:100%;border-radius:24px;overflow:hidden;border:1px solid rgba(255,255,255,.1);box-shadow:0 20px 60px rgba(0,0,0,.4)">
+<iframe src="1.html" style="width:100%;height:600px;border:none;display:block" title="多机位直播制作场景"></iframe>
+</div>
+<div style="position:relative;width:100%;border-radius:24px;overflow:hidden;border:1px solid rgba(255,255,255,.1);box-shadow:0 20px 60px rgba(0,0,0,.4)">
+<iframe src="2.html" style="width:100%;height:800px;border:none;display:block" title="实时影像中枢"></iframe>
+</div>
+</div>
+</div>
+</div>
+
+<div class="section">
+<div class="section-bg"></div>
+<div class="container">
+<div style="text-align:center;margin-bottom:80px">
+<div class="section-title-small">适用场景</div>
+<h2 class="section-title">覆盖各类现场制作需求</h2>
+</div>
+<div class="grid-3">
+<div class="use-case"><span class="use-case-icon">🎤</span><span>演讲、论坛、发布会</span></div>
+<div class="use-case"><span class="use-case-icon">🎭</span><span>线下演出现场导播</span></div>
+<div class="use-case"><span class="use-case-icon">⚽</span><span>体育赛事直播</span></div>
+<div class="use-case"><span class="use-case-icon">💼</span><span>企业会议多摄像头</span></div>
+<div class="use-case"><span class="use-case-icon">📡</span><span>网络直播多路切换</span></div>
+<div class="use-case"><span class="use-case-icon">🖼️</span><span>展览大屏幕展示</span></div>
+</div>
+</div>
+</div>
+
+<div class="section">
+<div class="section-bg"></div>
+<div class="container" style="text-align:center">
+<div class="section-title-small">快速开始</div>
+<h2 class="section-title">三步启动专业制作</h2>
+<div class="steps">
+<div class="step">
+<div class="step-num">1</div>
+<div>
+<h3>安装依赖</h3>
+<code>npm run install-all</code>
+</div>
+</div>
+<div class="step">
+<div class="step-num">2</div>
+<div>
+<h3>启动开发模式</h3>
+<code>npm run dev</code>
+</div>
+</div>
+<div class="step">
+<div class="step-num">3</div>
+<div>
+<h3>推流接入</h3>
+<code>rtmp://&lt;本机IP&gt;:1935/live/camera1</code>
+</div>
+</div>
+</div>
+<div style="margin-top:48px">
+<h2 style="font-size:32px;font-weight:bold;margin-bottom:24px">开源 · 专业 · 可靠</h2>
+<p style="font-size:20px;color:#cbd5e1;margin-bottom:40px">基于 GPL-3.0 开源协议，软件著作权已登记</p>
+<a href="https://github.com/ddaihao2022/rtmp-camera-switcher" target="_blank" class="btn-primary" style="display:inline-flex;align-items:center;gap:12px">
+<svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+前往 GitHub 仓库
+</a>
+</div>
+</div>
+</div>
+
+<footer>
+<div class="footer-inner">
+<div style="font-size:14px;color:#94a3b8">© 2026 ddaihao2022 · Software Copyright Registered</div>
+<div class="footer-links">
+<a href="https://github.com/ddaihao2022/rtmp-camera-switcher" target="_blank" class="footer-link">文档</a>
+<a href="https://github.com/ddaihao2022/rtmp-camera-switcher/issues" target="_blank" class="footer-link">问题反馈</a>
+<a href="https://github.com/ddaihao2022/rtmp-camera-switcher/blob/main/LICENSE" target="_blank" class="footer-link">GPL-3.0</a>
+</div>
+</div>
+</footer>
+
+<script>
+document.querySelectorAll('a[href^="#"]').forEach(function(a){
+a.addEventListener('click',function(e){
+e.preventDefault();
+var target=document.querySelector(a.getAttribute('href'));
+if(target)target.scrollIntoView({behavior:'smooth'});
+});
+});
+</script>
+
+</body>
+</html>

@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RTMP 多机位实时影像中枢 — 项目宣传页</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;0,900;1,600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        display: ['"Playfair Display"', 'Georgia', 'serif'],
+        body: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+      },
+      colors: {
+        warm: {
+          50: '#fdf8ed',
+          100: '#f9eccb',
+          200: '#f3d894',
+          300: '#ecc05d',
+          400: '#e6aa34',
+          500: '#d4931d',
+          600: '#b07116',
+          700: '#8c5515',
+          800: '#744419',
+          900: '#633a19',
+          950: '#391d0a',
+        },
+        ink: {
+          50: '#f7f5f0',
+          100: '#ebe6db',
+          200: '#d7ccb4',
+          300: '#bfad86',
+          400: '#ab9263',
+          500: '#9d8155',
+          600: '#876a49',
+          700: '#6d543e',
+          800: '#5c4738',
+          900: '#1a1512',
+          950: '#0a0806',
+        },
+      },
+    },
+  },
+}
+</script>
+<style>
+  :root {
+    --gold: #d4a853;
+    --gold-dim: #a07838;
+    --ink: #0a0806;
+    --warm-surface: #14100d;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    background: var(--ink);
+    color: #ebe6db;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .text-stroke {
+    -webkit-text-stroke: 1px rgba(212,168,83,0.3);
+    color: transparent;
+  }
+
+  .hero-glow {
+    background:
+      radial-gradient(ellipse 1200px 600px at 15% 20%, rgba(212,168,83,0.08), transparent 60%),
+      radial-gradient(ellipse 800px 500px at 85% 60%, rgba(212,168,83,0.04), transparent 55%),
+      radial-gradient(circle at 70% 35%, rgba(212,168,83,0.12), transparent 30%);
+  }
+
+  .grid-pattern {
+    background-image:
+      linear-gradient(rgba(212,168,83,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(212,168,83,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .monitor-frame {
+    background: linear-gradient(160deg, #161210, #0f0c09 45%, #0a0806);
+    box-shadow:
+      0 2px 0 0 rgba(212,168,83,0.2),
+      0 40px 80px rgba(0,0,0,0.5),
+      inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+
+  .feed-slot {
+    background: linear-gradient(135deg, rgba(212,168,83,0.06), rgba(212,168,83,0.02));
+    border: 1px solid rgba(212,168,83,0.12);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .feed-slot::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 30% 40%, rgba(212,168,83,0.08), transparent 50%),
+      linear-gradient(180deg, transparent 60%, rgba(10,8,6,0.6));
+    pointer-events: none;
+  }
+
+  .equipment-card {
+    background: linear-gradient(145deg, #1c1814, #0f0d0a 60%);
+    border: 1px solid rgba(212,168,83,0.1);
+    transition: border-color 0.4s ease, box-shadow 0.4s ease;
+  }
+
+  .equipment-card:hover {
+    border-color: rgba(212,168,83,0.3);
+    box-shadow: 0 0 40px rgba(212,168,83,0.06);
+  }
+
+  .stat-bar {
+    background: linear-gradient(90deg, rgba(212,168,83,0.15), rgba(212,168,83,0.03));
+    border-left: 2px solid rgba(212,168,83,0.5);
+  }
+
+  .lens-ring {
+    background: radial-gradient(circle, #f9eccb 0%, #d4931d 5%, #5c4738 20%, #1a1512 45%, #0a0806 60%);
+    box-shadow: 0 0 30px rgba(212,168,83,0.15), inset 0 0 20px rgba(0,0,0,0.6);
+  }
+
+  .glow-line {
+    position: absolute;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(212,168,83,0.4), transparent);
+  }
+
+  .cta-button {
+    background: linear-gradient(135deg, rgba(212,168,83,0.15), rgba(212,168,83,0.05));
+    border: 1px solid rgba(212,168,83,0.35);
+    transition: all 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  .cta-button:hover {
+    background: linear-gradient(135deg, rgba(212,168,83,0.25), rgba(212,168,83,0.1));
+    border-color: rgba(212,168,83,0.6);
+    box-shadow: 0 0 60px rgba(212,168,83,0.1);
+    transform: translateY(-1px);
+  }
+
+  .section-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(212,168,83,0.2) 20%, rgba(212,168,83,0.2) 80%, transparent);
+  }
+
+  @keyframes pulse-subtle {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 0.8; }
+  }
+
+  .rec-dot {
+    animation: pulse-subtle 2s ease-in-out infinite;
+  }
+
+  @keyframes drift-slow {
+    0% { transform: translateY(0) rotate(0deg); }
+    50% { transform: translateY(-8px) rotate(1deg); }
+    100% { transform: translateY(0) rotate(0deg); }
+  }
+
+  .drift {
+    animation: drift-slow 8s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rec-dot, .drift { animation: none; }
+  }
+
+  ::selection {
+    background: rgba(212,168,83,0.3);
+    color: #fdf8ed;
+  }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- ====== NAVIGATION ====== -->
+<nav class="fixed top-0 left-0 right-0 z-50 px-6 py-4 flex items-center justify-between" style="background: linear-gradient(180deg, rgba(10,8,6,0.95) 60%, rgba(10,8,6,0) 100%);">
+  <div class="flex items-center gap-3">
+    <img src="tx.jpg" alt="Logo" class="w-8 h-8 rounded-full object-cover ring-1" style="border-color: rgba(212,168,83,0.3);">
+    <span class="text-sm font-medium tracking-wider" style="color: #d7ccb4;">RTMP 影像中枢</span>
+  </div>
+  <div class="hidden md:flex items-center gap-8 text-xs tracking-widest uppercase" style="color: #bfad86;">
+    <a href="#overview" class="hover:text-warm-300 transition-colors duration-300">概览</a>
+    <a href="#equipment" class="hover:text-warm-300 transition-colors duration-300">设备矩阵</a>
+    <a href="#monitor" class="hover:text-warm-300 transition-colors duration-300">实时监看</a>
+    <a href="#specs" class="hover:text-warm-300 transition-colors duration-300">技术规格</a>
+  </div>
+  <a href="https://github.com/ddaihao2022/rtmp-camera-switcher" target="_blank" rel="noopener" class="cta-button px-5 py-2 rounded-full text-xs font-semibold tracking-wide flex items-center gap-2" style="color: #d4a853;">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+    GitHub
+  </a>
+</nav>
+
+<!-- ====== HERO SECTION ====== -->
+<section id="overview" class="relative min-h-screen flex items-center hero-glow grid-pattern overflow-hidden">
+  <!-- Subtle vignette -->
+  <div class="absolute inset-0" style="background: radial-gradient(ellipse at center, transparent 40%, rgba(10,8,6,0.8) 100%);"></div>
+
+  <!-- Abstract lens flare -->
+  <div class="absolute top-[12%] right-[18%] w-96 h-96 rounded-full opacity-[0.04] blur-3xl" style="background: radial-gradient(circle, #d4a853, transparent 70%);"></div>
+  <div class="absolute bottom-[20%] left-[10%] w-64 h-64 rounded-full opacity-[0.03] blur-2xl" style="background: radial-gradient(circle, #d4a853, transparent 70%);"></div>
+
+  <div class="relative z-10 w-full max-w-7xl mx-auto px-6 lg:px-12 pt-24 pb-12">
+    <div class="grid lg:grid-cols-2 gap-12 items-center">
+
+      <!-- Left: Text -->
+      <div class="space-y-8">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs tracking-wider" style="background: rgba(212,168,83,0.08); border: 1px solid rgba(212,168,83,0.2); color: #d4a853;">
+          <span class="w-2 h-2 rounded-full rec-dot" style="background: #d4a853;"></span>
+          项目宣传页
+        </div>
+
+        <h1 class="font-display text-5xl sm:text-6xl lg:text-7xl font-black leading-none tracking-tight" style="color: #fdf8ed;">
+          电影级<br>
+          <span style="color: #d4a853;">多机位</span><br>
+          <span style="color: #d7ccb4;">实时影像中枢</span>
+        </h1>
+
+        <p class="text-base lg:text-lg leading-relaxed max-w-md" style="color: #bfad86;">
+          DJI Mavic、DJI RS、Osmo 协同拍摄，切换台实时监看全部画面。
+          深空暗色美学，连接每一台 DJI 相机的无线实时数据流。
+        </p>
+
+        <div class="flex flex-wrap gap-3">
+          <span class="px-4 py-2 rounded-full text-xs font-medium" style="background: rgba(212,168,83,0.1); color: #d4a853; border: 1px solid rgba(212,168,83,0.2);">多机位同屏</span>
+          <span class="px-4 py-2 rounded-full text-xs font-medium" style="background: rgba(215,204,180,0.06); color: #d7ccb4; border: 1px solid rgba(215,204,180,0.12);">电影感逆光</span>
+          <span class="px-4 py-2 rounded-full text-xs font-medium" style="background: rgba(215,204,180,0.06); color: #d7ccb4; border: 1px solid rgba(215,204,180,0.12);">浅景深画面</span>
+          <span class="px-4 py-2 rounded-full text-xs font-medium" style="background: rgba(215,204,180,0.06); color: #d7ccb4; border: 1px solid rgba(215,204,180,0.12);">无线实时流</span>
+        </div>
+
+        <div class="flex gap-4 pt-4">
+          <a href="https://github.com/ddaihao2022/rtmp-camera-switcher" target="_blank" rel="noopener" class="cta-button px-8 py-3 rounded-full text-sm font-semibold tracking-wide flex items-center gap-2" style="color: #d4a853;">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            在 GitHub 上查看
+          </a>
+          <a href="https://github.com/ddaihao2022/rtmp-camera-switcher" target="_blank" rel="noopener" class="px-8 py-3 rounded-full text-sm font-medium tracking-wide transition-colors duration-300 flex items-center gap-2" style="color: #bfad86; border: 1px solid rgba(191,173,134,0.2);">
+            Star &amp; Fork
+          </a>
+        </div>
+      </div>
+
+      <!-- Right: Abstract monitor visualization -->
+      <div class="relative hidden lg:block">
+        <div class="monitor-frame rounded-2xl p-4 relative z-10">
+          <!-- Grid of feed slots -->
+          <div class="grid grid-cols-2 gap-3 mb-3">
+            <div class="feed-slot rounded-xl h-36 flex items-end p-3">
+              <div class="flex items-center gap-2 text-xs" style="color: #d4a853;">
+                <span class="w-2 h-2 rounded-full" style="background: #d4a853;"></span>
+                机位一 · 无人机
+              </div>
+            </div>
+            <div class="feed-slot rounded-xl h-36 flex items-end p-3">
+              <div class="flex items-center gap-2 text-xs" style="color: #d7ccb4;">
+                <span class="w-2 h-2 rounded-full" style="background: #d7ccb4;"></span>
+                机位二 · 稳定器
+              </div>
+            </div>
+            <div class="feed-slot rounded-xl h-36 flex items-end p-3">
+              <div class="flex items-center gap-2 text-xs" style="color: #d7ccb4;">
+                <span class="w-2 h-2 rounded-full" style="background: #d7ccb4;"></span>
+                机位三 · 三脚架
+              </div>
+            </div>
+            <div class="feed-slot rounded-xl h-36 flex items-end p-3" style="border-color: rgba(212,168,83,0.25);">
+              <div class="flex items-center gap-2 text-xs" style="color: #d4a853;">
+                <span class="w-2 h-2 rounded-full" style="background: #d4a853;"></span>
+                总览画面
+              </div>
+            </div>
+          </div>
+          <!-- Status bar -->
+          <div class="flex items-center gap-4 text-[10px] tracking-wider" style="color: #a07838;">
+            <span>延迟：12ms</span>
+            <span>帧率：60fps</span>
+            <span>码率：50Mbps</span>
+            <span class="ml-auto">同步监看中</span>
+          </div>
+        </div>
+
+        <!-- Decorative lens element -->
+        <div class="absolute -top-6 -right-4 w-24 h-24 lens-ring rounded-full z-20 drift" style="animation-delay: 1s;"></div>
+        <div class="absolute -bottom-4 -left-6 w-16 h-16 lens-ring rounded-full z-20 drift" style="animation-delay: 3s;"></div>
+
+        <!-- Glow line accents -->
+        <div class="glow-line w-48 top-[15%] -right-12 rotate-12"></div>
+        <div class="glow-line w-32 bottom-[25%] -left-8 -rotate-6"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====== SECTION DIVIDER ====== -->
+<div class="section-divider"></div>
+
+<!-- ====== EQUIPMENT MATRIX ====== -->
+<section id="equipment" class="relative py-24 lg:py-32 px-6 lg:px-12 overflow-hidden" style="background: linear-gradient(180deg, #0a0806, #100d0a 40%, #0a0806);">
+  <div class="max-w-7xl mx-auto">
+    <div class="mb-16 space-y-4">
+      <p class="text-xs tracking-[0.3em] uppercase" style="color: #a07838;">设备矩阵</p>
+      <h2 class="font-display text-4xl lg:text-5xl font-bold tracking-tight" style="color: #fdf8ed;">
+        专业级协同拍摄<span style="color: #d4a853;">.</span>
+      </h2>
+      <p class="text-base max-w-xl" style="color: #bfad86;">
+        从空中到地面，全方位覆盖赛事现场每一帧关键画面。
+      </p>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-6 lg:gap-8">
+      <!-- DJI Mavic -->
+      <div class="equipment-card rounded-2xl p-6 lg:p-8 space-y-5">
+        <div class="flex items-start justify-between">
+          <div>
+            <p class="text-xs tracking-widest uppercase mb-1" style="color: #a07838;">空中视角</p>
+            <h3 class="font-display text-2xl font-bold" style="color: #fdf8ed;">DJI Mavic</h3>
+          </div>
+          <div class="w-14 h-14 lens-ring rounded-full flex-shrink-0"></div>
+        </div>
+        <p class="text-sm leading-relaxed" style="color: #bfad86;">
+          高空俯瞰赛场全景，稳定云台确保画面流畅如丝。无线图传直达切换台，延迟低于 20ms。
+        </p>
+        <div class="flex gap-4 text-xs" style="color: #8c5515;">
+          <span class="stat-bar px-3 py-1 rounded-r">4K 60fps</span>
+          <span class="stat-bar px-3 py-1 rounded-r">10km 图传</span>
+        </div>
+      </div>
+
+      <!-- DJI RS -->
+      <div class="equipment-card rounded-2xl p-6 lg:p-8 space-y-5">
+        <div class="flex items-start justify-between">
+          <div>
+            <p class="text-xs tracking-widest uppercase mb-1" style="color: #a07838;">运动跟拍</p>
+            <h3 class="font-display text-2xl font-bold" style="color: #fdf8ed;">DJI RS</h3>
+          </div>
+          <div class="w-14 h-14 rounded-full flex items-center justify-center" style="background: linear-gradient(145deg, #2a2318, #14100d); border: 1px solid rgba(212,168,83,0.2);">
+            <div class="w-8 h-2 rounded-full" style="background: rgba(212,168,83,0.3);"></div>
+          </div>
+        </div>
+        <p class="text-sm leading-relaxed" style="color: #bfad86;">
+          三轴稳定器实现丝滑跟拍，运动员特写清晰锐利。电影感浅景深，逆光表现卓越。
+        </p>
+        <div class="flex gap-4 text-xs" style="color: #8c5515;">
+          <span class="stat-bar px-3 py-1 rounded-r">6K 视频</span>
+          <span class="stat-bar px-3 py-1 rounded-r">LiDAR 跟焦</span>
+        </div>
+      </div>
+
+      <!-- Osmo -->
+      <div class="equipment-card rounded-2xl p-6 lg:p-8 space-y-5">
+        <div class="flex items-start justify-between">
+          <div>
+            <p class="text-xs tracking-widest uppercase mb-1" style="color: #a07838;">固定机位</p>
+            <h3 class="font-display text-2xl font-bold" style="color: #fdf8ed;">Osmo</h3>
+          </div>
+          <div class="w-14 h-14 rounded-full flex items-center justify-center" style="background: linear-gradient(145deg, #2a2318, #14100d); border: 1px solid rgba(212,168,83,0.2);">
+            <div class="w-1 h-10 rounded-full" style="background: rgba(212,168,83,0.25);"></div>
+            <div class="w-6 h-1 rounded-full ml-1" style="background: rgba(212,168,83,0.15);"></div>
+          </div>
+        </div>
+        <p class="text-sm leading-relaxed" style="color: #bfad86;">
+          三脚架定点部署，稳定覆盖关键区域。多台 Osmo 组网，无缝拼接全景监看画面。
+        </p>
+        <div class="flex gap-4 text-xs" style="color: #8c5515;">
+          <span class="stat-bar px-3 py-1 rounded-r">全景拼接</span>
+          <span class="stat-bar px-3 py-1 rounded-r">RTMP 推流</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====== SECTION DIVIDER ====== -->
+<div class="section-divider"></div>
+
+<!-- ====== LIVE MONITOR SECTION ====== -->
+<section id="monitor" class="relative py-24 lg:py-32 px-6 lg:px-12" style="background: linear-gradient(180deg, #0a0806, #0d0b08 50%, #0a0806);">
+  <div class="max-w-7xl mx-auto">
+    <div class="grid lg:grid-cols-2 gap-16 items-center">
+
+      <!-- Left: Monitor UI -->
+      <div>
+        <div class="monitor-frame rounded-2xl p-4 lg:p-6">
+          <!-- Title bar -->
+          <div class="flex items-center justify-between mb-4 pb-3" style="border-bottom: 1px solid rgba(212,168,83,0.1);">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full rec-dot" style="background: #d4a853;"></span>
+              <span class="text-xs tracking-wider" style="color: #d7ccb4;">多机位切换软件 · 同步监看</span>
+            </div>
+            <div class="flex gap-1.5">
+              <span class="w-2 h-2 rounded-full" style="background: rgba(212,168,83,0.4);"></span>
+              <span class="w-2 h-2 rounded-full" style="background: rgba(212,168,83,0.2);"></span>
+              <span class="w-2 h-2 rounded-full" style="background: rgba(212,168,83,0.1);"></span>
+            </div>
+          </div>
+
+          <!-- Feed grid -->
+          <div class="grid grid-cols-2 gap-2 lg:gap-3 mb-4">
+            <div class="feed-slot rounded-xl h-28 lg:h-36 flex items-end p-3" style="border-color: rgba(212,168,83,0.25);">
+              <span class="text-[10px] tracking-wider" style="color: #d4a853;">机位一 无人机</span>
+            </div>
+            <div class="feed-slot rounded-xl h-28 lg:h-36 flex items-end p-3">
+              <span class="text-[10px] tracking-wider" style="color: #d7ccb4;">机位二 稳定器</span>
+            </div>
+            <div class="feed-slot rounded-xl h-28 lg:h-36 flex items-end p-3">
+              <span class="text-[10px] tracking-wider" style="color: #d7ccb4;">机位三 三脚架</span>
+            </div>
+            <div class="feed-slot rounded-xl h-28 lg:h-36 flex items-end p-3">
+              <span class="text-[10px] tracking-wider" style="color: #d7ccb4;">总览画面</span>
+            </div>
+          </div>
+
+          <!-- Data row -->
+          <div class="grid grid-cols-3 gap-2">
+            <div class="rounded-lg p-2 text-center" style="background: rgba(212,168,83,0.05); border: 1px solid rgba(212,168,83,0.1);">
+              <p class="text-[10px] tracking-wider" style="color: #a07838;">延迟</p>
+              <p class="text-sm font-semibold" style="color: #d4a853;">12ms</p>
+            </div>
+            <div class="rounded-lg p-2 text-center" style="background: rgba(212,168,83,0.05); border: 1px solid rgba(212,168,83,0.1);">
+              <p class="text-[10px] tracking-wider" style="color: #a07838;">帧率</p>
+              <p class="text-sm font-semibold" style="color: #d4a853;">60fps</p>
+            </div>
+            <div class="rounded-lg p-2 text-center" style="background: rgba(212,168,83,0.05); border: 1px solid rgba(212,168,83,0.1);">
+              <p class="text-[10px] tracking-wider" style="color: #a07838;">在线机位</p>
+              <p class="text-sm font-semibold" style="color: #d4a853;">4/4</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom decorative bar -->
+        <div class="mx-auto w-[94%] h-3 rounded-b-xl" style="background: linear-gradient(180deg, #1a1512, #0a0806); box-shadow: 0 8px 24px rgba(0,0,0,0.4);"></div>
+      </div>
+
+      <!-- Right: Text -->
+      <div class="space-y-6">
+        <p class="text-xs tracking-[0.3em] uppercase" style="color: #a07838;">实时监看</p>
+        <h2 class="font-display text-4xl lg:text-5xl font-bold tracking-tight" style="color: #fdf8ed;">
+          每一帧<span style="color: #d4a853;">.</span><br>尽在掌控
+        </h2>
+        <p class="text-base leading-relaxed" style="color: #bfad86;">
+          黄昏户外运动赛事直播场景中，切换台同步监看全部四个机位的实时画面。
+          导演可一键切换播出画面，确保观众看到的每一帧都经过精心选择。
+        </p>
+        <ul class="space-y-3">
+          <li class="flex items-start gap-3 text-sm" style="color: #d7ccb4;">
+            <span style="color: #d4a853;">—</span>
+            多机位同屏监看，一屏掌握全局
+          </li>
+          <li class="flex items-start gap-3 text-sm" style="color: #d7ccb4;">
+            <span style="color: #d4a853;">—</span>
+            电影感逆光画面，浅景深美学
+          </li>
+          <li class="flex items-start gap-3 text-sm" style="color: #d7ccb4;">
+            <span style="color: #d4a853;">—</span>
+            无线实时数据流，零布线部署
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====== SECTION DIVIDER ====== -->
+<div class="section-divider"></div>
+
+<!-- ====== SPECS SECTION ====== -->
+<section id="specs" class="relative py-24 lg:py-32 px-6 lg:px-12 overflow-hidden grid-pattern" style="background: #0a0806;">
+  <div class="absolute inset-0 opacity-[0.03]" style="background: radial-gradient(circle at 30% 50%, #d4a853, transparent 60%);"></div>
+
+  <div class="relative z-10 max-w-7xl mx-auto">
+    <div class="mb-16 space-y-4 text-center">
+      <p class="text-xs tracking-[0.3em] uppercase" style="color: #a07838;">技术规格</p>
+      <h2 class="font-display text-4xl lg:text-5xl font-bold tracking-tight" style="color: #fdf8ed;">
+        为专业直播而生<span style="color: #d4a853;">.</span>
+      </h2>
+    </div>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div class="text-center space-y-3 p-6 rounded-2xl" style="background: linear-gradient(180deg, rgba(212,168,83,0.04), transparent); border: 1px solid rgba(212,168,83,0.08);">
+        <p class="font-display text-5xl font-bold" style="color: #d4a853;">4</p>
+        <p class="text-sm tracking-wider" style="color: #d7ccb4;">同时监看机位</p>
+      </div>
+      <div class="text-center space-y-3 p-6 rounded-2xl" style="background: linear-gradient(180deg, rgba(212,168,83,0.04), transparent); border: 1px solid rgba(212,168,83,0.08);">
+        <p class="font-display text-5xl font-bold" style="color: #d4a853;">&lt;20</p>
+        <p class="text-sm tracking-wider" style="color: #d7ccb4;">毫秒图传延迟</p>
+      </div>
+      <div class="text-center space-y-3 p-6 rounded-2xl" style="background: linear-gradient(180deg, rgba(212,168,83,0.04), transparent); border: 1px solid rgba(212,168,83,0.08);">
+        <p class="font-display text-5xl font-bold" style="color: #d4a853;">60</p>
+        <p class="text-sm tracking-wider" style="color: #d7ccb4;">帧每秒实时画质</p>
+      </div>
+      <div class="text-center space-y-3 p-6 rounded-2xl" style="background: linear-gradient(180deg, rgba(212,168,83,0.04), transparent); border: 1px solid rgba(212,168,83,0.08);">
+        <p class="font-display text-5xl font-bold" style="color: #d4a853;">RTMP</p>
+        <p class="text-sm tracking-wider" style="color: #d7ccb4;">标准推流协议</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====== CTA SECTION ====== -->
+<section class="relative py-24 lg:py-32 px-6 lg:px-12 overflow-hidden" style="background: linear-gradient(180deg, #0a0806, #0d0b08 60%, #0a0806);">
+  <div class="absolute inset-0 opacity-[0.04]" style="background: radial-gradient(ellipse at 50% 40%, #d4a853, transparent 70%);"></div>
+
+  <div class="relative z-10 max-w-3xl mx-auto text-center space-y-8">
+    <h2 class="font-display text-4xl lg:text-5xl font-bold tracking-tight" style="color: #fdf8ed;">
+      准备好<span style="color: #d4a853;">升级</span>您的直播制作了吗？
+    </h2>
+    <p class="text-base leading-relaxed" style="color: #bfad86;">
+      清晰、迅捷、稳定的现场影像协同体验。从空中到地面，全方位覆盖赛事现场每一帧关键画面。
+    </p>
+    <div class="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+      <a href="https://github.com/ddaihao2022/rtmp-camera-switcher" target="_blank" rel="noopener" class="cta-button px-10 py-4 rounded-full text-base font-semibold tracking-wide flex items-center gap-2" style="color: #d4a853;">
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        在 GitHub 上查看
+      </a>
+      <a href="https://github.com/ddaihao2022/rtmp-camera-switcher" target="_blank" rel="noopener" class="px-10 py-4 rounded-full text-base font-medium tracking-wide transition-colors duration-300 flex items-center gap-2" style="color: #bfad86; border: 1px solid rgba(191,173,134,0.2);">
+        Star &amp; Fork
+      </a>
+    </div>
+  </div>
+
+  <!-- Bottom decorative element -->
+  <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[60%] h-px" style="background: linear-gradient(90deg, transparent, rgba(212,168,83,0.3), transparent);"></div>
+</section>
+
+<!-- ====== FOOTER ====== -->
+<footer class="py-10 px-6 lg:px-12 text-center" style="background: #0a0806;">
+  <div class="flex items-center justify-center gap-3 mb-4">
+    <img src="tx.jpg" alt="Logo" class="w-6 h-6 rounded-full object-cover" style="border: 1px solid rgba(212,168,83,0.2);">
+    <span class="text-xs tracking-wider" style="color: #6d543e;">RTMP 影像中枢</span>
+  </div>
+  <p class="text-xs" style="color: #5c4738;">多机位实时影像协同平台 · DJI 生态深度适配</p>
+  <a href="https://github.com/ddaihao2022/rtmp-camera-switcher" target="_blank" rel="noopener" class="inline-flex items-center gap-1 mt-3 text-xs transition-colors duration-300" style="color: #5c4738;">github.com/ddaihao2022/rtmp-camera-switcher</a>
+</footer>
+
+</body>
+</html>

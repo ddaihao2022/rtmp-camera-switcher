@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
+import { ScoreboardSection } from './ScoreboardPanel';
 
 const API = 'http://localhost:3001';
 
@@ -150,67 +151,109 @@ function WatermarkSection() {
 function HdmiSection() {
   const api = typeof window !== 'undefined' ? window.electronAPI : null;
   const [displays, setDisplays] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
-  const [outputOpen, setOutputOpen] = useState(false);
+  const [outputs, setOutputs] = useState([]);
+  const [modes, setModes] = useState({});
 
   const refresh = async () => {
     if (!api) return;
     const list = await api.listDisplays();
     setDisplays(list);
     const s = await api.getOutputStatus();
-    setOutputOpen(s.open);
-    if (selectedId == null) {
-      const t = list.find(d => !d.primary) || list[0];
-      if (t) setSelectedId(t.id);
-    }
+    setOutputs(s.outputs || []);
   };
 
   useEffect(() => {
     if (!api) return;
     refresh();
     const offChanged = api.onDisplaysChanged(refresh);
-    const offClosed = api.onOutputClosed(() => setOutputOpen(false));
-    return () => { offChanged?.(); offClosed?.(); };
+    const offOutputs = api.onOutputsChanged?.((outs) => setOutputs(outs || []));
+    const offClosed = api.onOutputClosed(() => refresh());
+    return () => { offChanged?.(); offOutputs?.(); offClosed?.(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!api) return (
     <section className="settings-section">
-      <div className="settings-section-title">📺 HDMI 输出</div>
+      <div className="settings-section-title">📺 HDMI 多路输出</div>
       <p className="settings-muted">请在桌面客户端中使用此功能</p>
     </section>
   );
 
+  const outputFor = (id) => outputs.find(o => o.displayId === id);
+  const openCount = outputs.filter(o => o.open).length;
+
+  const openAllSecondary = async () => {
+    const secondary = displays.filter(d => !d.primary);
+    const targets = secondary.length ? secondary : displays;
+    await api.openMultiOutputs(targets.map(d => ({
+      displayId: d.id,
+      mode: modes[d.id] || 'fullscreen',
+      source: null,
+    })));
+    await refresh();
+  };
+
   return (
     <section className="settings-section">
-      <div className="settings-section-title">📺 HDMI 输出</div>
+      <div className="settings-section-title">📺 HDMI 多路输出</div>
       {displays.length === 0 ? (
         <p className="settings-muted">未检测到外接显示器</p>
       ) : (
         <>
-          <select className="settings-select" value={selectedId ?? ''}
-            onChange={e => setSelectedId(Number(e.target.value))}>
-            {displays.map(d => (
-              <option key={d.id} value={d.id}>
-                {d.label} {d.primary ? '(主屏)' : ''} {d.bounds.width}×{d.bounds.height}
-              </option>
-            ))}
-          </select>
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            {!outputOpen ? (
-              <button className="settings-btn-primary"
-                onClick={async () => { await api.openOutput(selectedId); setOutputOpen(true); }}>
-                ▶ 开启全屏输出
-              </button>
-            ) : (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            <button className="settings-btn-primary" onClick={openAllSecondary}>
+              ▶ 一键分发副屏
+            </button>
+            {openCount > 0 && (
               <button className="settings-btn-danger"
-                onClick={async () => { await api.closeOutput(); setOutputOpen(false); }}>
-                ■ 关闭输出
+                onClick={async () => { await api.closeOutput(); await refresh(); }}>
+                ■ 全部关闭
               </button>
             )}
           </div>
-          <p className="settings-muted" style={{ marginTop: 6 }}>
-            {outputOpen ? '输出窗口正在目标显示器上全屏运行' : '将在选中显示器上全屏播放当前主输出流'}
+          <div className="hdmi-route-list">
+            {displays.map(d => {
+              const out = outputFor(d.id);
+              const open = !!out?.open;
+              return (
+                <div key={d.id} className={`hdmi-route ${open ? 'open' : ''}`}>
+                  <div className="hdmi-route-head">
+                    <span className="hdmi-route-name">
+                      {d.label}{d.primary && <em> 主屏</em>}
+                    </span>
+                    <span className={`hdmi-route-status ${open ? 'on' : ''}`}>
+                      {open ? (out.source ? `固定 ${out.source}` : 'PROGRAM') : '关闭'}
+                    </span>
+                  </div>
+                  <div className="hdmi-route-controls" style={{ gridTemplateColumns: 'auto 1fr' }}>
+                    <select className="settings-select" style={{ margin: 0, width: 88 }}
+                      value={modes[d.id] ?? 'fullscreen'}
+                      disabled={open}
+                      onChange={e => setModes(m => ({ ...m, [d.id]: e.target.value }))}>
+                      <option value="fullscreen">全屏</option>
+                      <option value="window">窗口</option>
+                    </select>
+                    {open ? (
+                      <button className="settings-btn-danger"
+                        onClick={async () => { await api.closeOutput(d.id); await refresh(); }}>
+                        关闭该路
+                      </button>
+                    ) : (
+                      <button className="settings-btn-primary"
+                        onClick={async () => {
+                          await api.openOutput(d.id, modes[d.id] || 'fullscreen', { source: null });
+                          await refresh();
+                        }}>
+                        开启（跟随 PROGRAM）
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="settings-muted">
+            每块显示器独立开/关；固定某一路信号源请在侧栏「HDMI 多路输出」中选择。
           </p>
         </>
       )}
@@ -300,6 +343,7 @@ export default function SettingsModal({ open, onClose }) {
           <button className="settings-close" onClick={onClose} aria-label="关闭">✕</button>
         </div>
         <div className="settings-modal-body">
+          <ScoreboardSection />
           <HdmiSection />
           <WatermarkSection />
           <LogSection />

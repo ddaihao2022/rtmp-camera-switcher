@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import flvjs from 'flv.js';
 import './OutputView.css';
+import './components/ScoreboardOverlay.css';
+import { buildFlvUrl, getUnsupportedCodecMessage, isBrowserPlayableStream } from './utils/stream';
+import { FLV_PROGRAM_OPTIONS, startCatchUp, tryPlay } from './utils/lowLatency';
+import ScoreboardOverlay from './components/ScoreboardOverlay';
 
 const API_HOST = 'http://localhost:3001';
 const FLV_HOST = 'http://localhost:8000';
@@ -54,10 +58,19 @@ function Watermark({ config }) {
 function OutputView() {
   const videoRef = useRef(null);
   const playerRef = useRef(null);
-  const [streamKey, setStreamKey] = useState(null);
+  // URL 固定信号源（多路 HDMI 分发时 pin 到某一路）；空则跟随全局 PROGRAM
+  const [pinnedSource] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('source') || null;
+    } catch {
+      return null;
+    }
+  });
+  const [streamKey, setStreamKey] = useState(pinnedSource);
   const [streams, setStreams] = useState([]);
   const [error, setError] = useState(null);
   const [watermark, setWatermark] = useState(null);
+  const [scoreboard, setScoreboard] = useState(null);
 
   // 仅在输出视图下打开「全屏黑背景 + 隐藏鼠标」模式,卸载时复原
   useEffect(() => {
@@ -65,29 +78,37 @@ function OutputView() {
     return () => document.body.classList.remove('output-mode');
   }, []);
 
-  // 拉取一次当前已选输出
+  // 固定源模式：streamKey 始终为 pinned；否则跟随全局输出
   useEffect(() => {
+    if (pinnedSource) {
+      setStreamKey(pinnedSource);
+      return;
+    }
     fetch(`${API_HOST}/api/output`)
       .then(r => r.json())
-      .then(d => d.selectedStream && setStreamKey(d.selectedStream))
+      .then(d => setStreamKey(d.selectedStream || null))
       .catch(() => {});
-  }, []);
+  }, [pinnedSource]);
 
   // 接收实时事件
   useEffect(() => {
     const socket = io(API_HOST);
     socket.on('streamUpdate', setStreams);
-    socket.on('outputSelected', ({ streamKey }) => setStreamKey(streamKey || null));
+    socket.on('outputSelected', ({ streamKey: key }) => {
+      if (!pinnedSource) setStreamKey(key || null);
+    });
     socket.on('watermark:update', setWatermark);
+    socket.on('scoreboard:update', setScoreboard);
     return () => socket.disconnect();
-  }, []);
+  }, [pinnedSource]);
 
-  // 拉取初始水印配置
+  // 拉取初始水印 / 比分条
   useEffect(() => {
     fetch(`${API_HOST}/api/watermark`).then(r => r.json()).then(setWatermark).catch(() => {});
+    fetch(`${API_HOST}/api/scoreboard`).then(r => r.json()).then(setScoreboard).catch(() => {});
   }, []);
 
-  // 选中流变化时,重建播放器
+  // 选中流变化时,重建播放器（PROGRAM 级低延迟配置）
   useEffect(() => {
     const safeDestroy = () => {
       if (playerRef.current) {
@@ -104,55 +125,37 @@ function OutputView() {
     setError(null);
     if (!streamKey || !videoRef.current || !flvjs.isSupported()) return;
 
-    const matched = streams.find(s => s.streamKey === streamKey);
-    const url = matched?.flvPath
-      ? `${FLV_HOST}${matched.flvPath}`
-      : `${FLV_HOST}/${streamKey}.flv`;
+    const matched = streams.find(s => s.streamKey === streamKey) || { streamKey };
+    if (!isBrowserPlayableStream(matched)) {
+      setError(getUnsupportedCodecMessage(matched));
+      return;
+    }
+    const url = buildFlvUrl(matched, FLV_HOST);
 
     const player = flvjs.createPlayer(
       { type: 'flv', url, isLive: true, hasAudio: false, hasVideo: true },
-      {
-        enableWorker: false,
-        enableStashBuffer: false,
-        stashInitialSize: 32,  // 降低初始缓冲
-        autoCleanupSourceBuffer: true,
-        autoCleanupMaxBackwardDuration: 2,  // 更激进地清理历史缓冲
-        autoCleanupMinBackwardDuration: 1,
-        // flv.js 1.6+ 内置追播:超过 maxLatency 自动加速到 minRemain
-        liveBufferLatencyChasing: true,
-        liveBufferLatencyMaxLatency: 0.5,  // 降低最大延迟阈值
-        liveBufferLatencyMinRemain: 0.1,   // 降低目标剩余缓冲
-        lazyLoad: false,
-        seekType: 'range'
-      }
+      FLV_PROGRAM_OPTIONS
     );
     player.on(flvjs.Events.ERROR, (t, d) => setError(`${t}: ${d}`));
     player.attachMediaElement(videoRef.current);
     player.load();
     const v = videoRef.current;
-    const tryPlay = () => v?.play?.().catch(() => {});
-    v.addEventListener('loadeddata', tryPlay, { once: true });
+    const onLoaded = () => tryPlay(v);
+    v.addEventListener('loadeddata', onLoaded, { once: true });
 
-    // 兜底追播:更频繁地检查并采用更激进的策略
-    const catchUpTimer = setInterval(() => {
-      if (!v || v.paused || !v.buffered.length) return;
-      const liveEdge = v.buffered.end(v.buffered.length - 1);
-      const lag = liveEdge - v.currentTime;
-      // 更激进的追播策略
-      if (lag > 0.8) {
-        v.currentTime = liveEdge - 0.1;  // 直接跳到接近实时位置
-      } else if (lag > 0.5) {
-        v.playbackRate = 1.2;  // 轻微加速
-      } else {
-        v.playbackRate = 1.0;  // 恢复正常
-      }
-    }, 500);  // 更高频率检查
+    // 兜底追播：更激进，适合赛事直播
+    const stopCatchUp = startCatchUp(v, {
+      jumpLag: 0.55,
+      softLag: 0.3,
+      intervalMs: 300,
+      softRate: 1.3,
+    });
 
     playerRef.current = player;
 
     return () => {
-      clearInterval(catchUpTimer);
-      v?.removeEventListener('loadeddata', tryPlay);
+      stopCatchUp();
+      v?.removeEventListener('loadeddata', onLoaded);
       safeDestroy();
     };
   }, [streamKey, streams]);
@@ -178,6 +181,8 @@ function OutputView() {
                   loop={localItem.loop ?? false} controls className="output-audio"
                   ref={el => { if (el) el.playbackRate = localItem.playbackRate ?? 1.0; }} />
               </div>
+            ) : localItem.fileType === 'image' ? (
+              <img src={localUrl} alt={localItem.fileName} className="output-video output-image" draggable={false} />
             ) : (
               <video src={localUrl} className="output-video"
                 autoPlay={localItem.autoplay ?? true} playsInline controls={false}
@@ -188,6 +193,10 @@ function OutputView() {
             <video ref={videoRef} className="output-video" autoPlay muted playsInline />
           )}
           <Watermark config={watermark} />
+          <ScoreboardOverlay config={scoreboard} />
+          {pinnedSource && (
+            <div className="output-pin-badge">固定源 · {pinnedSource}</div>
+          )}
           {!isLive && !localItem && (
             <div className="output-msg"><p>等待 {streamKey} 上线...</p></div>
           )}

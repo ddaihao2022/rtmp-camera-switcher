@@ -3,6 +3,7 @@ const NmsContext = require('node-media-server/src/core/context');
 const express = require('express');
 const http = require('http');
 const os = require('os');
+const dgram = require('dgram');
 const socketIo = require('socket.io');
 const cors = require('cors');
 
@@ -21,24 +22,86 @@ const logger = {
   }
 };
 
-// 获取本机内网 IPv4(优先选择常见的 192/10/172 段)
-function getLanIp() {
+// ─── 本机推流地址选择 ─────────────────────────────────────────────────────────
+// 虚拟/VPN 网卡名特征：不作为默认推流地址（VMware/VBox/WSL/Docker 等常占 192.168 段）
+const VIRTUAL_IFACE_RE = /vmware|vmnet|virtualbox|vbox|hyper-?v|vethernet|\bwsl\b|docker|tailscale|zerotier|nordlynx|wireguard|openvpn|\btap\d|\btun\d|bridge|veth|pangp|bluetooth|isatap|teredo/i;
+// 物理网卡名特征：略优先（Wi-Fi / 以太网）
+const PHYSICAL_IFACE_RE = /wi-?fi|wlan|ethernet|以太网|local area connection/i;
+
+function listLanCandidates() {
   const ifaces = os.networkInterfaces();
-  const candidates = [];
+  const seen = new Set();
+  const out = [];
   for (const name of Object.keys(ifaces)) {
     for (const info of ifaces[name] || []) {
       if (info.family !== 'IPv4' || info.internal) continue;
-      candidates.push({ name, address: info.address });
+      if (info.address.startsWith('169.254.')) continue; // APIPA 无 DHCP，不可用
+      if (seen.has(info.address)) continue;
+      seen.add(info.address);
+      out.push({ name, address: info.address, virtual: VIRTUAL_IFACE_RE.test(name) });
     }
   }
-  const score = (ip) => {
-    if (ip.startsWith('192.168.')) return 3;
-    if (ip.startsWith('10.')) return 2;
-    if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return 1;
-    return 0;
+  return out;
+}
+
+// UDP connect 不发包，仅让系统按路由表选源地址 → 默认出口 IP
+function detectDefaultRouteIp(timeoutMs = 800) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ip) => {
+      if (settled) return;
+      settled = true;
+      resolve(ip);
+    };
+    try {
+      const sock = dgram.createSocket('udp4');
+      const timer = setTimeout(() => {
+        try { sock.close(); } catch {}
+        finish(null);
+      }, timeoutMs);
+      sock.on('error', () => {
+        clearTimeout(timer);
+        try { sock.close(); } catch {}
+        finish(null);
+      });
+      sock.connect(80, '223.5.5.5', () => {
+        clearTimeout(timer);
+        let ip = null;
+        try { ip = sock.address().address; } catch {}
+        try { sock.close(); } catch {}
+        finish(ip);
+      });
+    } catch {
+      finish(null);
+    }
+  });
+}
+
+function scoreCandidate(c, defaultRouteIp) {
+  let s = 0;
+  if (c.virtual) s -= 100;
+  if (defaultRouteIp && c.address === defaultRouteIp) s += 50;
+  if (PHYSICAL_IFACE_RE.test(c.name)) s += 20;
+  if (c.address.startsWith('192.168.')) s += 3;
+  else if (c.address.startsWith('10.')) s += 2;
+  else if (/^172\.(1[6-9]|2\d|3[01])\./.test(c.address)) s += 1;
+  return s;
+}
+
+async function getLanInfo() {
+  const candidates = listLanCandidates();
+  const defaultRouteIp = await detectDefaultRouteIp();
+  candidates.sort((a, b) => scoreCandidate(b, defaultRouteIp) - scoreCandidate(a, defaultRouteIp));
+  const lanIp = candidates[0]?.address || '127.0.0.1';
+  return {
+    lanIp,
+    defaultRouteIp,
+    candidates: candidates.map(c => ({
+      ...c,
+      rtmpBase: `rtmp://${c.address}:1935/live`,
+    })),
+    rtmpBase: `rtmp://${lanIp}:1935/live`,
   };
-  candidates.sort((a, b) => score(b.address) - score(a.address));
-  return candidates[0]?.address || '127.0.0.1';
 }
 
 // 诊断:监控所有 BroadcastServer，在每次广播 packet 时记录（仅 verbose 模式）
@@ -104,9 +167,9 @@ setInterval(() => {
 // node-media-server v4 配置
 const nmsConfig = {
   bind: '0.0.0.0',
-  rtmp: { 
+  rtmp: {
     port: 1935,
-    chunk_size: 4096,  // 降低 chunk 大小以减少分片延迟
+    chunk_size: 2048,  // 更小 chunk，降低分片延迟（体育赛事低延迟）
     gop_cache: false,  // 禁用 GOP 缓存
     ping: 30,
     ping_timeout: 60
@@ -165,6 +228,21 @@ let selectedOutputStream = null;
 // 音频状态：Map<streamKey, { volume, muted }>
 const audioState = {};
 
+// 比分条 / 计分叠加（体育赛事转播）
+let scoreboardConfig = {
+  enabled: false,
+  homeName: '主队',
+  awayName: '客队',
+  homeScore: 0,
+  awayScore: 0,
+  period: '第1节',
+  clock: '',
+  showClock: false,
+  position: 'top', // top | bottom
+  homeColor: '#2563eb',
+  awayColor: '#dc2626',
+};
+
 // 水印配置
 let watermarkConfig = {
   enabled: false,
@@ -178,17 +256,80 @@ let watermarkConfig = {
   padding: 24,
 };
 
+const FOURCC_HEVC = Buffer.from('hvc1').readUInt32BE(0);
+const FOURCC_VP9 = Buffer.from('vp09').readUInt32BE(0);
+const FOURCC_AV1 = Buffer.from('av01').readUInt32BE(0);
+
+function getVideoCodecLabel(videoCodec) {
+  if (videoCodec == null || videoCodec === '') return 'unknown';
+  const raw = String(videoCodec).toLowerCase();
+  if (videoCodec === 7 || raw === '7' || raw.includes('h264') || raw.includes('avc')) return 'H.264';
+  if (videoCodec === FOURCC_HEVC || raw.includes('h265') || raw.includes('hevc') || raw.includes('hvc1')) return 'H.265/HEVC';
+  if (videoCodec === FOURCC_VP9 || raw.includes('vp9') || raw.includes('vp09')) return 'VP9';
+  if (videoCodec === FOURCC_AV1 || raw.includes('av1') || raw.includes('av01')) return 'AV1';
+  return String(videoCodec);
+}
+
+function isBrowserPlayableVideoCodec(videoCodec) {
+  const label = getVideoCodecLabel(videoCodec);
+  return label === 'unknown' || label === 'H.264';
+}
+
+function getStreamDiagnostics(streamPath = '') {
+  const normalizedPath = normalizeStreamPath(streamPath);
+  const broadcast = NmsContext.broadcasts.get(normalizedPath);
+  const publisher = broadcast?.publisher;
+  const videoCodec = publisher?.videoCodec ?? null;
+  const audioCodec = publisher?.audioCodec ?? null;
+
+  return {
+    videoCodec,
+    videoCodecLabel: getVideoCodecLabel(videoCodec),
+    browserPlayable: isBrowserPlayableVideoCodec(videoCodec),
+    videoWidth: publisher?.videoWidth ?? 0,
+    videoHeight: publisher?.videoHeight ?? 0,
+    videoFramerate: publisher?.videoFramerate ?? 0,
+    videoDatarate: publisher?.videoDatarate ?? 0,
+    audioCodec,
+    audioChannels: publisher?.audioChannels ?? 0,
+    audioSamplerate: publisher?.audioSamplerate ?? 0,
+  };
+}
+
+function emitStreamUpdate() {
+  io.emit('streamUpdate', [...Array.from(activeStreams.values()), ...Array.from(localFiles.values())]);
+}
+
+function normalizeStreamPath(streamPath = '') {
+  const normalized = String(streamPath)
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter(Boolean)
+    .join('/');
+
+  return normalized ? `/${normalized}` : '';
+}
+
+function getStreamMeta(streamPath = '') {
+  const normalizedPath = normalizeStreamPath(streamPath);
+  const streamKey = normalizedPath.replace(/^\/+/, '');
+
+  return {
+    streamKey,
+    streamPath: normalizedPath,
+    flvPath: streamKey ? `/${streamKey}.flv` : '',
+  };
+}
+
 // RTMP 事件监听
 nms.on('prePublish', (session) => {
   logger.verbose(`[prePublish] id=${session.id} streamPath=${session.streamPath}`);
 });
 
 nms.on('postPublish', (session) => {
-  const streamPath = session.streamPath;
-  logger.info(`[postPublish] id=${session.id} streamPath=${streamPath}`);
-
-  const streamKey = streamPath.replace(/^\/+|\/+$/g, '');
-  const flvPath = streamPath + '.flv';
+  const rawStreamPath = session.streamPath;
+  const { streamKey, streamPath, flvPath } = getStreamMeta(rawStreamPath);
+  logger.info(`[postPublish] id=${session.id} streamPath=${rawStreamPath} normalized=${streamPath}`);
 
   activeStreams.set(streamKey, {
     id: session.id,
@@ -196,18 +337,19 @@ nms.on('postPublish', (session) => {
     streamPath,
     flvPath,
     startTime: new Date(),
-    status: 'online'
+    status: 'online',
+    ...getStreamDiagnostics(streamPath)
   });
 
   logger.verbose('活跃流:', Array.from(activeStreams.keys()));
-  io.emit('streamUpdate', [...Array.from(activeStreams.values()), ...Array.from(localFiles.values())]);
+  emitStreamUpdate();
 });
 
 nms.on('donePublish', (session) => {
-  const streamPath = session.streamPath;
-  logger.info(`[donePublish] id=${session.id} streamPath=${streamPath}`);
+  const rawStreamPath = session.streamPath;
+  const { streamKey, streamPath } = getStreamMeta(rawStreamPath);
+  logger.info(`[donePublish] id=${session.id} streamPath=${rawStreamPath} normalized=${streamPath}`);
 
-  const streamKey = streamPath.replace(/^\/+|\/+$/g, '');
   activeStreams.delete(streamKey);
 
   if (selectedOutputStream === streamKey) {
@@ -227,6 +369,19 @@ nms.on('postPlay', (session) => {
 });
 
 // API 路由
+setInterval(() => {
+  let changed = false;
+  for (const stream of activeStreams.values()) {
+    const diagnostics = getStreamDiagnostics(stream.streamPath);
+    const keys = Object.keys(diagnostics);
+    if (keys.some((key) => stream[key] !== diagnostics[key])) {
+      Object.assign(stream, diagnostics);
+      changed = true;
+    }
+  }
+  if (changed) emitStreamUpdate();
+}, 1000);
+
 app.get('/api/streams', (req, res) => {
   res.json(Array.from(activeStreams.values()));
 });
@@ -235,14 +390,15 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', activeStreams: activeStreams.size });
 });
 
-app.get('/api/server-info', (req, res) => {
-  const lanIp = getLanIp();
+app.get('/api/server-info', async (req, res) => {
+  const info = await getLanInfo();
   res.json({
-    lanIp,
+    lanIp: info.lanIp,
     rtmpPort: 1935,
     httpFlvPort: 8000,
     apiPort: 3001,
-    rtmpBase: `rtmp://${lanIp}:1935/live`
+    rtmpBase: info.rtmpBase,
+    candidates: info.candidates,
   });
 });
 
@@ -278,8 +434,20 @@ function mimeFromExt(ext) {
     avi:'video/x-msvideo', webm:'video/webm', m4v:'video/mp4', ts:'video/mp2t',
     flv:'video/x-flv', wmv:'video/x-ms-wmv',
     mp3:'audio/mpeg', aac:'audio/aac', wav:'audio/wav',
-    flac:'audio/flac', m4a:'audio/mp4', ogg:'audio/ogg' };
+    flac:'audio/flac', m4a:'audio/mp4', ogg:'audio/ogg',
+    png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif',
+    webp:'image/webp', bmp:'image/bmp', svg:'image/svg+xml', ico:'image/x-icon',
+    avif:'image/avif' };
   return map[ext.toLowerCase()] || 'application/octet-stream';
+}
+
+const AUDIO_EXT_RE = /^(mp3|aac|wav|flac|m4a|ogg)$/i;
+const IMAGE_EXT_RE = /^(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i;
+
+function detectLocalFileType(ext) {
+  if (AUDIO_EXT_RE.test(ext)) return 'audio';
+  if (IMAGE_EXT_RE.test(ext)) return 'image';
+  return 'video';
 }
 
 // 注册本地文件为虚拟流
@@ -287,7 +455,7 @@ app.post('/api/local/add', (req, res) => {
   const { filePath, fileName } = req.body;
   if (!filePath) return res.status(400).json({ error: 'filePath required' });
   const ext = filePath.split('.').pop() || '';
-  const fileType = ext.match(/^(mp3|aac|wav|flac|m4a|ogg)$/i) ? 'audio' : 'video';
+  const fileType = detectLocalFileType(ext);
   const key = 'local/' + fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
   localFiles.set(key, {
     streamKey: key, filePath, fileName, fileType,
@@ -296,6 +464,8 @@ app.post('/api/local/add', (req, res) => {
     loop: false,
     autoplay: true,
     playbackRate: 1.0,
+    // 图片：停留秒数（用于列表顺序切换；0/空 = 常驻）
+    duration: fileType === 'image' ? 5 : 0,
   });
   io.emit('streamUpdate', [...Array.from(activeStreams.values()), ...Array.from(localFiles.values())]);
   res.json({ streamKey: key });
@@ -307,7 +477,7 @@ app.patch('/api/local/:key(*)', (req, res) => {
   const fullKey = key.startsWith('local/') ? key : 'local/' + key;
   const item = localFiles.get(fullKey);
   if (!item) return res.status(404).json({ error: 'not found' });
-  const allowed = ['loop', 'autoplay', 'playbackRate'];
+  const allowed = ['loop', 'autoplay', 'playbackRate', 'duration'];
   for (const field of allowed) {
     if (req.body[field] !== undefined) item[field] = req.body[field];
   }
@@ -374,6 +544,25 @@ app.post('/api/watermark', (req, res) => {
   res.json(watermarkConfig);
 });
 
+// ─── 比分条 API ────────────────────────────────────────────────────────────────
+app.get('/api/scoreboard', (req, res) => {
+  res.json(scoreboardConfig);
+});
+
+app.post('/api/scoreboard', (req, res) => {
+  const patch = req.body || {};
+  const next = { ...scoreboardConfig };
+  for (const key of Object.keys(scoreboardConfig)) {
+    if (patch[key] !== undefined) next[key] = patch[key];
+  }
+  // 分数保持非负整数
+  next.homeScore = Math.max(0, Math.floor(Number(next.homeScore) || 0));
+  next.awayScore = Math.max(0, Math.floor(Number(next.awayScore) || 0));
+  scoreboardConfig = next;
+  io.emit('scoreboard:update', scoreboardConfig);
+  res.json(scoreboardConfig);
+});
+
 // ─── 日志开关 API ──────────────────────────────────────────────────────────────
 app.get('/api/log/status', (req, res) => {
   res.json({ verbose: logger.isVerbose() });
@@ -404,6 +593,9 @@ io.on('connection', (socket) => {
   // 同步水印配置
   socket.emit('watermark:update', watermarkConfig);
 
+  // 同步比分条
+  socket.emit('scoreboard:update', scoreboardConfig);
+
   // 接收音频控制指令并广播给所有客户端
   socket.on('audio:setState', ({ streamKey, volume, muted }) => {
     if (!audioState[streamKey]) audioState[streamKey] = {};
@@ -424,8 +616,9 @@ io.on('connection', (socket) => {
 
 // 启动服务器
 nms.run();
-server.listen(3001, () => {
-  const lanIp = getLanIp();
+server.listen(3001, async () => {
+  const info = await getLanInfo();
+  const lanIp = info.lanIp;
   logger.info('=================================');
   logger.info(`RTMP服务器运行在 rtmp://${lanIp}:1935`);
   logger.info(`HTTP-FLV服务器运行在 http://${lanIp}:8000`);
@@ -434,5 +627,11 @@ server.listen(3001, () => {
   logger.info('推流地址(必须 app/stream 两段式):');
   logger.info(`  rtmp://${lanIp}:1935/live/<设备名>`);
   logger.info(`  例:rtmp://${lanIp}:1935/live/cam1`);
+  if (info.candidates.length > 1) {
+    logger.info('其他可用内网地址:');
+    for (const c of info.candidates.slice(1)) {
+      logger.info(`  ${c.rtmpBase}/<设备名>  (${c.name}${c.virtual ? ', 虚拟网卡' : ''})`);
+    }
+  }
   logger.info(`详细日志: ${verboseLog ? '已开启' : '已关闭'} (可通过 POST /api/log/toggle 切换)`);
 });

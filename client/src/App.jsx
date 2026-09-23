@@ -16,9 +16,10 @@ function App() {
   const [streams, setStreams] = useState([]);
   const [selectedStream, setSelectedStream] = useState(null);
   const [serverStatus, setServerStatus] = useState('连接中...');
-  const [viewMode, setViewMode] = useState('single'); // 'single' or 'grid'
+  const [viewMode, setViewMode] = useState('single'); // 'single' | 'grid' | 'director'
   const [outputStream, setOutputStream] = useState(null); // 选中作为输出的流
-  const [rtmpBase, setRtmpBase] = useState('rtmp://localhost:1935/live');
+  const [serverInfo, setServerInfo] = useState(null); // { rtmpBase, candidates: [...] }
+  const [pickedBase, setPickedBase] = useState(null); // 用户在多网卡间手动切换
   const [settingsOpen, setSettingsOpen] = useState(false);
   const videoRefsMap = useRef(new Map());
   const audioStateRef = useRef({});
@@ -49,23 +50,30 @@ function App() {
     }
   };
 
+  // 定时拉取内网推流地址：IP 变化(换网/DHCP/开关VPN)后侧边栏能自动纠正
+  const refreshServerInfo = useCallback(() => {
+    fetch('http://localhost:3001/api/server-info')
+      .then(r => r.json())
+      .then(d => { if (d?.rtmpBase) setServerInfo(d); })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     fetch('http://localhost:3001/api/audio/state')
       .then(r => r.json())
       .then(d => { audioStateRef.current = d; })
       .catch(() => {});
 
-    // 拉取服务器内网信息,得到真实 LAN IP 推流地址
-    fetch('http://localhost:3001/api/server-info')
-      .then(r => r.json())
-      .then(d => d.rtmpBase && setRtmpBase(d.rtmpBase))
-      .catch(() => {});
-  }, []);
+    refreshServerInfo();
+    const timer = setInterval(refreshServerInfo, 10000);
+    return () => clearInterval(timer);
+  }, [refreshServerInfo]);
 
   useEffect(() => {
     socket.on('connect', () => {
       setServerStatus('已连接');
       console.log('已连接到服务器');
+      refreshServerInfo();
     });
 
     socket.on('disconnect', () => {
@@ -109,7 +117,7 @@ function App() {
       socket.off('outputSelected');
       socket.off('audio:stateUpdate');
     };
-  }, []);
+  }, [refreshServerInfo]);
 
   // 将 VU 表数据广播给音频控制台窗口
   useEffect(() => {
@@ -120,7 +128,8 @@ function App() {
 
   const handleStreamSelect = (stream) => {
     setSelectedStream(stream);
-    setViewMode('single');
+    // 导播台模式下保持当前视图（多画面点击只改预览）
+    setViewMode((m) => (m === 'director' ? m : 'single'));
   };
 
   // 数字快捷键：1~9 切换预览，Shift+1~9 切换输出
@@ -152,9 +161,57 @@ function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streams]);
 
+  // 导播台：Enter / Space = CUT（预览 → 输出）
+  useEffect(() => {
+    if (viewMode !== 'director') return;
+    const onKey = (e) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleCut();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, selectedStream, outputStream, streams]);
+
+  // 进入导播台时若无预览，自动选第一路作为 PVW
+  useEffect(() => {
+    if (viewMode !== 'director') return;
+    if (!selectedStream && streams[0]) setSelectedStream(streams[0]);
+    if (!outputStream && streams[0]) handleSelectOutput(streams[0].streamKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, streams]);
+
   const toggleViewMode = () => {
     if (streams.length > 0) {
-      setViewMode(viewMode === 'single' ? 'grid' : 'single');
+      setViewMode((m) => (m === 'single' ? 'grid' : m === 'grid' ? 'director' : 'single'));
+    }
+  };
+
+  // 导播台 CUT：把当前预览(selected)切到主输出(output)
+  const handleCut = () => {
+    if (!selectedStream) return;
+    if (selectedStream.streamKey === outputStream) return;
+    handleSelectOutput(selectedStream.streamKey);
+  };
+
+  // 导播台快捷改分（不打开设置）
+  const bumpScore = async (side, delta) => {
+    try {
+      const r = await fetch('http://localhost:3001/api/scoreboard');
+      const cfg = await r.json();
+      const key = side === 'home' ? 'homeScore' : 'awayScore';
+      const next = { ...cfg, [key]: Math.max(0, (Number(cfg[key]) || 0) + delta) };
+      await fetch('http://localhost:3001/api/scoreboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(next),
+      });
+    } catch (e) {
+      console.error('改分失败', e);
     }
   };
 
@@ -174,10 +231,18 @@ function App() {
     }
   };
 
+  // 多网卡：默认用服务端选中的地址；用户点选后优先展示所选，刷新时若该 IP 消失则回退
+  const candidates = serverInfo?.candidates || [];
+  const activeBase = (() => {
+    if (pickedBase && candidates.some(c => c.rtmpBase === pickedBase)) return pickedBase;
+    if (pickedBase && serverInfo?.rtmpBase === pickedBase) return pickedBase;
+    return serverInfo?.rtmpBase || '';
+  })();
+
   return (
     <div className="app">
       <header className="header">
-        <h1>📹 RTMP多摄影设备管理系统</h1>
+        <h1>📹 RTMP 赛事导播台</h1>
         <div className="header-controls">
           <div className="status">
             <span className={`status-indicator ${serverStatus === '已连接' ? 'online' : 'offline'}`}></span>
@@ -185,9 +250,17 @@ function App() {
             <span className="stream-count">活跃设备: {streams.length}</span>
           </div>
           {streams.length > 0 && (
-            <button className="view-mode-btn" onClick={toggleViewMode}>
-              {viewMode === 'single' ? '📺 网格视图' : '🎯 单屏视图'}
-            </button>
+            <>
+              <button className="view-mode-btn" onClick={toggleViewMode}>
+                {viewMode === 'single' ? '📺 网格视图' : viewMode === 'grid' ? '🎬 导播台' : '🎯 单屏视图'}
+              </button>
+              {viewMode === 'director' && (
+                <button className="view-mode-btn cut-btn" onClick={handleCut}
+                  title="将预览切到输出（Enter）">
+                  ✂ CUT
+                </button>
+              )}
+            </>
           )}
           <button className="view-mode-btn audio-open-btn" onClick={handleOpenAudio}>
             🎚 音频混音台
@@ -225,9 +298,27 @@ function App() {
             <div className="connection-info">
               <h3>推流地址</h3>
               <div className="rtmp-url">
-                <code>{rtmpBase}/[设备名称]</code>
+                <code>{activeBase ? `${activeBase}/<设备名>` : '获取中…'}</code>
               </div>
-              <p className="hint">使用OBS或摄影设备推流到上述地址</p>
+              <p className="hint">OBS：服务器填 {activeBase || '上述地址'}，串流密钥填设备名（如 cam1）</p>
+              {candidates.length > 1 && (
+                <div className="rtmp-candidates">
+                  <span className="hint">本机多网卡，连不上可切换：</span>
+                  <div className="rtmp-candidate-list">
+                    {candidates.map(c => (
+                      <button
+                        key={c.address}
+                        type="button"
+                        className={`rtmp-candidate ${c.virtual ? 'virtual' : ''} ${activeBase === c.rtmpBase ? 'active' : ''}`}
+                        onClick={() => setPickedBase(c.rtmpBase)}
+                        title={c.virtual ? `${c.name}（虚拟网卡，通常不可用）` : c.name}
+                      >
+                        {c.address}{c.virtual ? ' ·虚拟' : ''}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {outputStream && (
                 <div className="output-info">
                   <h3>当前输出</h3>
@@ -236,13 +327,79 @@ function App() {
                 </div>
               )}
             </div>
-            <HdmiOutputPanel />
+            <HdmiOutputPanel streams={streams} />
             <RecordPanel outputStream={outputStream} videoRefsMap={videoRefsMap.current} />
           </div>
         </aside>
 
         <main className="video-area">
-          {viewMode === 'grid' && streams.length > 0 ? (
+          {viewMode === 'director' && streams.length > 0 ? (
+            <div className="director-layout">
+              <section className="director-monitors">
+                <div className="director-monitor director-pgm">
+                  <div className="director-monitor-label pgm">PGM · PROGRAM</div>
+                  {outputStream ? (
+                    (() => {
+                      const pgm = streams.find(s => s.streamKey === outputStream);
+                      return pgm ? (
+                        <VideoPlayer stream={pgm} compact={false} program
+                          onVideoReady={handleVideoReady} onVideoUnmount={handleVideoUnmount} />
+                      ) : (
+                        <div className="director-empty">等待 {outputStream}</div>
+                      );
+                    })()
+                  ) : (
+                    <div className="director-empty">未设置输出</div>
+                  )}
+                </div>
+                <div className="director-monitor director-pvw">
+                  <div className="director-monitor-label pvw">PVW · 预览</div>
+                  {selectedStream ? (
+                    <VideoPlayer stream={selectedStream} compact={false}
+                      onVideoReady={handleVideoReady} onVideoUnmount={handleVideoUnmount} />
+                  ) : (
+                    <div className="director-empty">从下方多画面选择预览</div>
+                  )}
+                </div>
+              </section>
+              <div className="director-toolbar">
+                <button className="cut-btn cut-btn--lg" onClick={handleCut}
+                  disabled={!selectedStream || selectedStream.streamKey === outputStream}>
+                  ✂ CUT / TAKE
+                </button>
+                <div className="director-score-quick" title="快捷改分（需在设置中启用比分条）">
+                  <button type="button" onClick={() => bumpScore('home', -1)}>主−</button>
+                  <button type="button" onClick={() => bumpScore('home', 1)}>主+</button>
+                  <button type="button" onClick={() => bumpScore('away', -1)}>客−</button>
+                  <button type="button" onClick={() => bumpScore('away', 1)}>客+</button>
+                </div>
+                <span className="director-hint">数字键切输出 · Shift+数字切预览 · Enter CUT · 多画面单击预览 / 双击上输出</span>
+              </div>
+              <section className="director-multiview">
+                {streams.map((stream, i) => {
+                  const isPgm = stream.streamKey === outputStream;
+                  const isPvw = stream.streamKey === selectedStream?.streamKey;
+                  return (
+                    <div key={stream.streamKey} className="director-tile-wrap">
+                      <span className="director-tile-idx">{i + 1}</span>
+                      {(isPgm || isPvw) && (
+                        <span className={`director-tile-badge ${isPgm ? 'pgm' : 'pvw'}`}>
+                          {isPgm ? 'PGM' : 'PVW'}
+                        </span>
+                      )}
+                      <div className={`director-tile ${isPgm ? 'on-pgm' : isPvw ? 'on-pvw' : ''}`}>
+                        <VideoPlayer stream={stream} compact
+                          onVideoReady={handleVideoReady} onVideoUnmount={handleVideoUnmount}
+                          onSelectPreview={handleStreamSelect}
+                          onTake={(s) => { handleStreamSelect(s); handleSelectOutput(s.streamKey); }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </section>
+            </div>
+          ) : viewMode === 'grid' && streams.length > 0 ? (
             <div className={`video-grid grid-${Math.min(streams.length, 4)}`}>
               {streams.map((stream) => (
                 <div key={stream.streamKey} className="grid-item">
@@ -277,7 +434,10 @@ function App() {
         </main>
       </div>
 
-      <OutputMonitor streamKey={outputStream} streams={streams} />
+      {/* 导播台已有大 PGM 监看，隐藏右下角浮窗避免重复 */}
+      {viewMode !== 'director' && (
+        <OutputMonitor streamKey={outputStream} streams={streams} />
+      )}
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );

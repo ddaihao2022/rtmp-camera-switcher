@@ -1,7 +1,7 @@
 {
   "name": "rtmp-camera-system",
-  "version": "1.1.0",
-  "description": "RTMP多摄影设备管理系统(支持桌面端 + HDMI 输出切换)",
+  "version": "1.2.0",
+  "description": "专业体育赛事转播导播台 · RTMP 多机位切换 / HDMI 多路分发 / 比分条",
   "main": "electron/main.js",
   "scripts": {
     "server": "node server/index.js",
@@ -18,7 +18,11 @@
     "camera",
     "streaming",
     "electron",
-    "hdmi"
+    "hdmi",
+    "sports",
+    "broadcast",
+    "scoreboard",
+    "vision-mixer"
   ],
   "author": "",
   "license": "MIT",
@@ -57,6 +61,7 @@
       }
     ],
     "win": {
+      "signAndEditExecutable": false,
       "target": [
         {
           "target": "nsis",

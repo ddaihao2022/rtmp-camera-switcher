@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>电影级多机位直播制作</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body{font-family:ui-sans-serif,system-ui,-apple-system,"Microsoft YaHei",sans-serif}
+    .flare{background:radial-gradient(circle at 72% 36%,rgba(255,218,126,.95),rgba(255,145,61,.25) 18%,transparent 34%)}
+    .glass{background:linear-gradient(135deg,rgba(255,255,255,.16),rgba(255,255,255,.04));backdrop-filter:blur(14px)}
+    .gridline{background-image:linear-gradient(rgba(255,255,255,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.07) 1px,transparent 1px);background-size:28px 28px}
+  </style>
+</head>
+<body class="min-h-screen bg-slate-950 flex items-center justify-center p-3 sm:p-6 overflow-hidden">
+  <main class="relative w-full max-w-7xl aspect-video overflow-hidden rounded-[2rem] bg-slate-950 shadow-2xl ring-1 ring-white/10">
+    <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_10%,#334155_0%,#111827_42%,#020617_100%)]"></div>
+    <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/30"></div>
+    <div class="absolute inset-0 flare"></div>
+    <div class="absolute inset-x-0 bottom-[20%] h-[18%] bg-gradient-to-b from-orange-400/30 via-amber-300/10 to-transparent blur-xl"></div>
+    <div class="absolute left-0 right-0 bottom-[18%] h-[18%] bg-gradient-to-t from-emerald-950 to-emerald-800/30"></div>
+    <div class="absolute left-[8%] right-[8%] bottom-[25%] h-[1px] bg-amber-200/50"></div>
+
+    <section class="absolute left-5 sm:left-10 top-5 sm:top-10 z-20 max-w-[48%]">
+      <div class="inline-flex items-center gap-2 rounded-full border border-amber-200/30 bg-black/30 px-3 py-1 text-[10px] sm:text-sm text-amber-100 shadow-lg">
+        <span class="h-2 w-2 rounded-full bg-amber-300 shadow-[0_0_16px_#fcd34d]"></span>
+        黄昏户外运动赛事直播
+      </div>
+      <h1 class="mt-3 sm:mt-5 text-2xl sm:text-5xl lg:text-6xl font-black leading-tight text-white drop-shadow-2xl">
+        电影级多机位<br>直播制作现场
+      </h1>
+      <p class="mt-2 sm:mt-5 text-xs sm:text-lg lg:text-xl text-slate-200/90 leading-relaxed">
+        DJI Mavic、DJI RS、Osmo 协同拍摄，切换台实时监看全部画面。
+      </p>
+      <div class="mt-3 sm:mt-6 flex flex-wrap gap-2 text-[10px] sm:text-sm text-white">
+        <span class="rounded-full bg-white/10 px-3 py-1 ring-1 ring-white/15">多机位同屏</span>
+        <span class="rounded-full bg-white/10 px-3 py-1 ring-1 ring-white/15">电影感逆光</span>
+        <span class="rounded-full bg-white/10 px-3 py-1 ring-1 ring-white/15">浅景深画面</span>
+      </div>
+    </section>
+
+    <div class="absolute right-[13%] top-[17%] z-10">
+      <div class="relative h-12 w-20 sm:h-20 sm:w-32">
+        <div class="absolute left-1/2 top-1/2 h-2 w-14 sm:w-24 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-900"></div>
+        <div class="absolute left-1/2 top-1/2 h-7 w-9 sm:h-10 sm:w-14 -translate-x-1/2 -translate-y-1/2 rounded-lg bg-slate-800 ring-1 ring-white/20"></div>
+        <div class="absolute left-0 top-1 h-4 w-4 sm:h-7 sm:w-7 rounded-full border-2 border-slate-700 bg-black/50"></div>
+        <div class="absolute right-0 top-1 h-4 w-4 sm:h-7 sm:w-7 rounded-full border-2 border-slate-700 bg-black/50"></div>
+        <div class="absolute bottom-1 left-0 h-4 w-4 sm:h-7 sm:w-7 rounded-full border-2 border-slate-700 bg-black/50"></div>
+        <div class="absolute bottom-1 right-0 h-4 w-4 sm:h-7 sm:w-7 rounded-full border-2 border-slate-700 bg-black/50"></div>
+        <div class="absolute -bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-black/40 px-2 py-0.5 text-[9px] sm:text-xs text-white/80">DJI Mavic</div>
+      </div>
+    </div>
+
+    <div class="absolute right-[26%] bottom-[26%] z-10 hidden sm:block">
+      <div class="relative h-40 w-20">
+        <div class="absolute left-8 top-0 h-10 w-10 rounded-full bg-black"></div>
+        <div class="absolute left-9 top-9 h-24 w-4 rounded-full bg-black"></div>
+        <div class="absolute left-1 top-16 h-3 w-28 -rotate-12 rounded-full bg-black"></div>
+        <div class="absolute left-16 top-11 h-20 w-4 rounded-full bg-slate-900"></div>
+        <div class="absolute left-12 top-8 h-8 w-10 rounded-lg bg-slate-800 ring-1 ring-white/20"></div>
+        <div class="absolute left-6 top-[8.2rem] h-14 w-3 -rotate-12 rounded-full bg-black"></div>
+        <div class="absolute left-12 top-[8.2rem] h-14 w-3 rotate-12 rounded-full bg-black"></div>
+        <div class="absolute -bottom-3 left-6 whitespace-nowrap rounded bg-black/40 px-2 py-0.5 text-xs text-white/80">DJI RS</div>
+      </div>
+    </div>
+
+    <div class="absolute right-[7%] bottom-[25%] z-10 hidden md:block">
+      <div class="relative h-40 w-24">
+        <div class="absolute left-9 top-0 h-12 w-8 rounded-lg bg-slate-800 ring-1 ring-white/20"></div>
+        <div class="absolute left-7 top-10 h-3 w-12 rounded-full bg-black"></div>
+        <div class="absolute left-1/2 top-12 h-24 w-1 -translate-x-1/2 bg-black"></div>
+        <div class="absolute left-1/2 top-24 h-16 w-1 origin-top -rotate-28 bg-black"></div>
+        <div class="absolute left-1/2 top-24 h-16 w-1 origin-top rotate-28 bg-black"></div>
+        <div class="absolute left-1/2 top-24 h-16 w-1 origin-top bg-black"></div>
+        <div class="absolute -bottom-3 left-5 whitespace-nowrap rounded bg-black/40 px-2 py-0.5 text-xs text-white/80">Osmo 三脚架</div>
+      </div>
+    </div>
+
+    <div class="absolute left-[10%] right-[10%] bottom-[22%] z-0 flex justify-center gap-2 opacity-80">
+      <div class="h-8 w-8 rounded-full bg-black/70"></div>
+      <div class="h-10 w-10 rounded-full bg-black/70"></div>
+      <div class="h-7 w-7 rounded-full bg-black/70"></div>
+      <div class="h-9 w-9 rounded-full bg-black/70"></div>
+      <div class="h-6 w-6 rounded-full bg-black/70"></div>
+    </div>
+
+    <section class="absolute bottom-0 left-0 right-0 z-30 h-[42%] bg-gradient-to-t from-black via-slate-950/95 to-transparent">
+      <div class="absolute left-[6%] bottom-[9%] w-[46%] max-w-xl">
+        <div class="relative rounded-t-2xl border border-slate-600/70 bg-slate-900 p-2 shadow-2xl">
+          <div class="mb-2 flex items-center justify-between text-[9px] sm:text-xs text-slate-300">
+            <span>多机位切换软件</span>
+            <span class="text-amber-300">同步监看</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="gridline h-14 sm:h-24 rounded-lg border border-amber-300/30 bg-gradient-to-br from-orange-500/30 to-slate-950 p-1 text-[9px] sm:text-xs text-white">机位一 无人机</div>
+            <div class="gridline h-14 sm:h-24 rounded-lg border border-white/10 bg-gradient-to-br from-emerald-500/20 to-slate-950 p-1 text-[9px] sm:text-xs text-white">机位二 稳定器</div>
+            <div class="gridline h-14 sm:h-24 rounded-lg border border-white/10 bg-gradient-to-br from-blue-500/20 to-slate-950 p-1 text-[9px] sm:text-xs text-white">机位三 三脚架</div>
+            <div class="gridline h-14 sm:h-24 rounded-lg border border-white/10 bg-gradient-to-br from-fuchsia-500/20 to-slate-950 p-1 text-[9px] sm:text-xs text-white">总览画面</div>
+          </div>
+        </div>
+        <div class="h-3 rounded-b-xl bg-slate-800 shadow-xl"></div>
+      </div>
+
+      <div class="absolute right-[8%] bottom-[7%] w-[38%]">
+        <div class="h-16 sm:h-24 rounded-2xl bg-slate-900/95 p-2 shadow-2xl ring-1 ring-white/10">
+          <div class="grid grid-cols-10 gap-1">
+            <span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-amber-400/70"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span>
+            <span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span><span class="h-3 sm:h-5 rounded bg-slate-700"></span>
+            <span class="col-span-7 h-3 sm:h-5 rounded bg-slate-700"></span><span class="col-span-3 h-3 sm:h-5 rounded bg-emerald-400/70"></span>
+          </div>
+        </div>
+        <div class="absolute -top-8 left-[18%] h-10 w-20 rounded-full bg-black blur-sm"></div>
+        <div class="absolute -top-10 left-[12%] h-10 w-10 rounded-full bg-orange-100/70 blur-md"></div>
+      </div>
+      <div class="absolute bottom-[14%] right-[24%] h-8 w-24 rounded-full bg-orange-100/20 blur-xl"></div>
+    </section>
+  </main>
+</body>
+</html>

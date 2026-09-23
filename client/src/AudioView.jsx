@@ -57,7 +57,7 @@ function Channel({ streamKey, type, fileType, outputStream, socket, initVol, ini
       <div className="ch-title">
         {isOutput && <span className="ch-out-dot" />}
         <span className="ch-name" title={streamKey}>
-          {isLocal ? (fileType === 'audio' ? '🎵 ' : '🎬 ') : ''}
+          {isLocal ? (fileType === 'audio' ? '🎵 ' : fileType === 'image' ? '🖼 ' : '🎬 ') : ''}
           {isLocal ? streamKey.replace(/^local\//, '') : streamKey}
         </span>
         {!linked && <span className="ch-loading" title="主窗口未播放此路">○</span>}
