@@ -349,7 +349,7 @@ function App() {
               id="sources"
               title="信号源"
               icon="📹"
-              badge={`${liveStreams.length + localStreams.length}`}
+              badge={liveStreams.length > 0 ? String(liveStreams.length) : ''}
               defaultOpen
             >
               <StreamList
