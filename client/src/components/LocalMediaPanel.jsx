@@ -143,9 +143,7 @@ export default function LocalMediaPanel({
           {adding ? '…' : '+ 添加'}
         </button>
       </div>
-      {localStreams.length === 0 ? (
-        <p className="local-empty">点击"+ 添加"导入视频、音频或图片</p>
-      ) : (
+      {localStreams.length === 0 ? null : (
         <ul className="local-list">
           {localStreams.map((s, i) => {
             const hotkey = indexOffset + i + 1;

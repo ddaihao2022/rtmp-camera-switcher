@@ -1,7 +1,7 @@
 {
   "name": "rtmp-camera-system",
   "version": "1.2.0",
-  "description": "专业体育赛事转播导播台 · RTMP 多机位切换 / HDMI 多路分发 / 比分条",
+  "description": "田径赛事导播台 · RTMP 多机位切换 / HDMI 多路分发 / 道次成绩与跑表",
   "main": "electron/main.js",
   "scripts": {
     "server": "node server/index.js",

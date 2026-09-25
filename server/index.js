@@ -225,23 +225,116 @@ const io = socketIo(server, {
 const activeStreams = new Map();
 let selectedOutputStream = null;
 
+// 专业转场预设（TAKE / 数字切源时生效）
+let transitionConfig = {
+  type: 'cut',        // cut | mix | wipe | dip | slide
+  duration: 500,      // ms
+  direction: 'left',  // wipe/slide: left | right | up | down
+};
+
+const TRANSITION_TYPES = ['cut', 'mix', 'wipe', 'dip', 'slide'];
+
+function emitTransition(from, to) {
+  if (!from || from === to) return;
+  const t = transitionConfig;
+  if (!t || t.type === 'cut') return;
+  io.emit('outputTransition', {
+    from,
+    to,
+    type: t.type,
+    duration: Math.max(120, Math.min(3000, Number(t.duration) || 500)),
+    direction: t.direction || 'left',
+    at: Date.now(),
+  });
+}
+
 // 音频状态：Map<streamKey, { volume, muted }>
 const audioState = {};
 
-// 比分条 / 计分叠加（体育赛事转播）
+// 叠加层配置（田径 / 球队两种模式）— 持久化到 data/scoreboard.json
+const fsScore = (() => {
+  try {
+    const pathMod = require('path');
+    const fsMod = require('fs');
+    const dir = pathMod.join(process.cwd(), 'data');
+    if (!fsMod.existsSync(dir)) fsMod.mkdirSync(dir, { recursive: true });
+    return { path: pathMod.join(dir, 'scoreboard.json'), fs: fsMod };
+  } catch {
+    return null;
+  }
+})();
+
+function defaultAthletes(n = 8) {
+  return Array.from({ length: n }, (_, i) => ({
+    lane: i + 1, name: '', place: '', result: '',
+  }));
+}
+
 let scoreboardConfig = {
-  enabled: false,
+  enabled: true,
+  mode: 'track', // 'track' 田径 | 'team' 球队
+  // —— 球队 ——
   homeName: '主队',
   awayName: '客队',
   homeScore: 0,
   awayScore: 0,
   period: '第1节',
+  // —— 田径径赛 ——
+  eventName: '男子100米',
+  eventKind: 'sprint', // sprint | middle | long | relay | field
+  category: '男子',
+  round: '预赛',
+  heat: '第1组',
+  wind: '',            // 如 +0.8 / -1.2
+  mr: '',              // 赛会纪录 10.23
+  sb: '',              // 赛季最佳
+  athletes: defaultAthletes(8),
+  showPlaces: true,
+  showResults: true,
+  // —— 田赛 ——
+  attempt: 1,
+  attemptsTotal: 6,
+  bestMark: '',
+  // —— 成绩榜（决赛后前三）——
+  showPodium: false,
+  // —— 公共 ——
   clock: '',
-  showClock: false,
-  position: 'top', // top | bottom
+  showClock: true,
+  clockRunning: false,
+  clockStartAt: null,
+  clockOffsetMs: 0,
+  laps: [],            // 记圈读数
+  position: 'bottom',
   homeColor: '#2563eb',
   awayColor: '#dc2626',
 };
+
+if (fsScore?.fs.existsSync(fsScore.path)) {
+  try {
+    const raw = JSON.parse(fsScore.fs.readFileSync(fsScore.path, 'utf8'));
+    scoreboardConfig = { ...scoreboardConfig, ...raw, clockRunning: false, clockStartAt: null };
+    logger.info('[田径] 已加载 scoreboard.json');
+  } catch (e) {
+    logger.warn('[田径] scoreboard.json 加载失败', e.message);
+  }
+}
+
+function persistScoreboard() {
+  if (!fsScore) return;
+  try {
+    const toSave = {
+      ...scoreboardConfig,
+      clockRunning: false,
+      clockStartAt: null,
+      clockOffsetMs: scoreboardConfig.clockRunning
+        ? currentClockMs(scoreboardConfig)
+        : scoreboardConfig.clockOffsetMs,
+    };
+    fsScore.fs.writeFileSync(fsScore.path, JSON.stringify(toSave, null, 2), 'utf8');
+  } catch (e) {
+    logger.verbose('[田径] 持久化失败', e.message);
+  }
+}
 
 // 水印配置
 let watermarkConfig = {
@@ -406,6 +499,26 @@ app.get('/api/output', (req, res) => {
   res.json({ selectedStream: selectedOutputStream });
 });
 
+// 转场预设
+app.get('/api/transition', (req, res) => {
+  res.json({ ...transitionConfig, types: TRANSITION_TYPES });
+});
+
+app.post('/api/transition', (req, res) => {
+  const patch = req.body || {};
+  if (patch.type && TRANSITION_TYPES.includes(patch.type)) {
+    transitionConfig.type = patch.type;
+  }
+  if (patch.duration !== undefined) {
+    transitionConfig.duration = Math.max(120, Math.min(3000, Number(patch.duration) || 500));
+  }
+  if (patch.direction && ['left', 'right', 'up', 'down'].includes(patch.direction)) {
+    transitionConfig.direction = patch.direction;
+  }
+  io.emit('transition:update', transitionConfig);
+  res.json(transitionConfig);
+});
+
 app.post('/api/output/select', (req, res) => {
   const { streamKey } = req.body;
 
@@ -417,7 +530,9 @@ app.post('/api/output/select', (req, res) => {
 
   // 同时检查 RTMP 流和本地文件
   if (activeStreams.has(streamKey) || localFiles.has(streamKey)) {
+    const from = selectedOutputStream;
     selectedOutputStream = streamKey;
+    emitTransition(from, streamKey);
     io.emit('outputSelected', { streamKey });
     res.json({ success: true, streamKey, message: `已选择 ${streamKey} 作为输出` });
   } else {
@@ -544,22 +659,202 @@ app.post('/api/watermark', (req, res) => {
   res.json(watermarkConfig);
 });
 
-// ─── 比分条 API ────────────────────────────────────────────────────────────────
+// ─── 叠加层 / 比分条 API（田径优先） ─────────────────────────────────────────
+const TRACK_TEMPLATES = [
+  { id: '100m', label: '100米', eventName: '男子100米', eventKind: 'sprint', category: '男子', lanes: 8, useClock: true },
+  { id: '200m', label: '200米', eventName: '男子200米', eventKind: 'sprint', category: '男子', lanes: 8, useClock: true },
+  { id: '400m', label: '400米', eventName: '男子400米', eventKind: 'sprint', category: '男子', lanes: 8, useClock: true },
+  { id: '800m', label: '800米', eventName: '男子800米', eventKind: 'middle', category: '男子', lanes: 8, useClock: true },
+  { id: '1500m', label: '1500米', eventName: '男子1500米', eventKind: 'middle', category: '男子', lanes: 0, useClock: true },
+  { id: '5000m', label: '5000米', eventName: '男子5000米', eventKind: 'long', category: '男子', lanes: 0, useClock: true },
+  { id: '10000m', label: '10000米', eventName: '男子10000米', eventKind: 'long', category: '男子', lanes: 0, useClock: true },
+  { id: '4x100', label: '4×100接力', eventName: '男子4×100米接力', eventKind: 'relay', category: '男子', lanes: 8, useClock: true },
+  { id: '4x400', label: '4×400接力', eventName: '男子4×400米接力', eventKind: 'relay', category: '男子', lanes: 8, useClock: true },
+  { id: '110h', label: '110米栏', eventName: '男子110米栏', eventKind: 'sprint', category: '男子', lanes: 8, useClock: true },
+  { id: 'lj', label: '跳远', eventName: '男子跳远', eventKind: 'field', category: '男子', lanes: 0, useClock: false },
+  { id: 'tj', label: '三级跳远', eventName: '男子三级跳远', eventKind: 'field', category: '男子', lanes: 0, useClock: false },
+  { id: 'hj', label: '跳高', eventName: '男子跳高', eventKind: 'field', category: '男子', lanes: 0, useClock: false },
+  { id: 'pv', label: '撑竿跳高', eventName: '男子撑竿跳高', eventKind: 'field', category: '男子', lanes: 0, useClock: false },
+  { id: 'sp', label: '铅球', eventName: '男子铅球', eventKind: 'field', category: '男子', lanes: 0, useClock: false },
+  { id: 'dt', label: '铁饼', eventName: '男子铁饼', eventKind: 'field', category: '男子', lanes: 0, useClock: false },
+  { id: 'ht', label: '链球', eventName: '男子链球', eventKind: 'field', category: '男子', lanes: 0, useClock: false },
+  { id: 'jt', label: '标枪', eventName: '男子标枪', eventKind: 'field', category: '男子', lanes: 0, useClock: false },
+];
+
+function formatTrackClock(ms) {
+  const total = Math.max(0, Math.floor(ms));
+  const m = Math.floor(total / 60000);
+  const s = Math.floor((total % 60000) / 1000);
+  const cs = Math.floor((total % 1000) / 10);
+  if (m > 0) {
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+  }
+  return `${s}.${String(cs).padStart(2, '0')}`;
+}
+
+function currentClockMs(cfg = scoreboardConfig) {
+  const base = Number(cfg.clockOffsetMs) || 0;
+  if (cfg.clockRunning && cfg.clockStartAt) {
+    return base + (Date.now() - Number(cfg.clockStartAt));
+  }
+  return base;
+}
+
+function applyClockAction(cfg, action) {
+  if (action === 'start') {
+    if (!cfg.clockRunning) {
+      cfg.clockRunning = true;
+      cfg.clockStartAt = Date.now();
+      cfg.clock = formatTrackClock(currentClockMs(cfg));
+    }
+  } else if (action === 'stop' || action === 'pause') {
+    if (cfg.clockRunning) {
+      cfg.clockOffsetMs = currentClockMs(cfg);
+      cfg.clockRunning = false;
+      cfg.clockStartAt = null;
+      cfg.clock = formatTrackClock(cfg.clockOffsetMs);
+    }
+  } else if (action === 'reset') {
+    cfg.clockRunning = false;
+    cfg.clockStartAt = null;
+    cfg.clockOffsetMs = 0;
+    cfg.clock = formatTrackClock(0);
+    cfg.laps = [];
+  } else if (action === 'lap' || action === 'split') {
+    const reading = formatTrackClock(currentClockMs(cfg));
+    cfg.clock = reading;
+    cfg.laps = [...(cfg.laps || []), reading].slice(-8);
+  } else if (action === 'toggle') {
+    if (cfg.clockRunning) applyClockAction(cfg, 'stop');
+    else applyClockAction(cfg, 'start');
+  }
+  return cfg;
+}
+
+function emitScoreboard() {
+  const payload = {
+    ...scoreboardConfig,
+    clock: scoreboardConfig.clockRunning
+      ? formatTrackClock(currentClockMs())
+      : scoreboardConfig.clock,
+    clockMs: currentClockMs(),
+  };
+  io.emit('scoreboard:update', payload);
+  persistScoreboard();
+  return payload;
+}
+
+app.get('/api/scoreboard/templates', (req, res) => {
+  res.json(TRACK_TEMPLATES);
+});
+
 app.get('/api/scoreboard', (req, res) => {
-  res.json(scoreboardConfig);
+  res.json({
+    ...scoreboardConfig,
+    clockMs: currentClockMs(),
+    clock: scoreboardConfig.clockRunning
+      ? formatTrackClock(currentClockMs())
+      : scoreboardConfig.clock,
+  });
 });
 
 app.post('/api/scoreboard', (req, res) => {
   const patch = req.body || {};
   const next = { ...scoreboardConfig };
-  for (const key of Object.keys(scoreboardConfig)) {
+  const keys = new Set([
+    ...Object.keys(scoreboardConfig),
+    'mode', 'eventName', 'eventKind', 'category', 'round', 'heat', 'wind', 'mr', 'sb',
+    'athletes', 'showPlaces', 'showResults', 'showPodium',
+    'attempt', 'attemptsTotal', 'bestMark',
+    'clockAction', 'finishOrder', 'templateId', 'laneCount',
+    'clearPlaces', 'clockAction',
+  ]);
+  for (const key of keys) {
     if (patch[key] !== undefined) next[key] = patch[key];
   }
-  // 分数保持非负整数
   next.homeScore = Math.max(0, Math.floor(Number(next.homeScore) || 0));
   next.awayScore = Math.max(0, Math.floor(Number(next.awayScore) || 0));
+  next.attempt = Math.max(1, Math.floor(Number(next.attempt) || 1));
+  next.attemptsTotal = Math.max(3, Math.floor(Number(next.attemptsTotal) || 6));
+
+  if (Array.isArray(next.athletes)) {
+    next.athletes = next.athletes.map((a, i) => ({
+      lane: Number(a?.lane) || i + 1,
+      name: String(a?.name ?? ''),
+      place: String(a?.place ?? ''),
+      result: String(a?.result ?? ''),
+      unit: String(a?.unit ?? ''),
+    }));
+  }
+
+  // 赛事模板：一键换项目并重置跑表/道次
+  if (patch.templateId) {
+    const tpl = TRACK_TEMPLATES.find(t => t.id === patch.templateId);
+    if (tpl) {
+      next.mode = 'track';
+      next.eventName = patch.eventName || tpl.eventName;
+      next.eventKind = tpl.eventKind;
+      if (patch.category !== undefined) next.category = patch.category;
+      else if (tpl.category) next.category = tpl.category;
+      if (patch.round !== undefined) next.round = patch.round;
+      next.wind = patch.wind !== undefined ? patch.wind : '';
+      next.laps = [];
+      applyClockAction(next, 'reset');
+      if (tpl.lanes > 0) {
+        next.athletes = defaultAthletes(tpl.lanes);
+      } else {
+        // 长距离/田赛：保留姓名列但清空名次成绩
+        next.athletes = (next.athletes || defaultAthletes(8)).map((a, i) => ({
+          lane: i + 1, name: a.name || '', place: '', result: '', unit: a.unit || '',
+        }));
+      }
+      next.showPlaces = true;
+      next.showResults = tpl.eventKind !== 'field';
+      next.showPodium = false;
+      if (tpl.eventKind === 'field') {
+        next.attempt = 1;
+        next.bestMark = '';
+      }
+    }
+  }
+
+  // 快速录入名次：finishOrder = [4,5,3,1,...] 表示道次先后
+  if (Array.isArray(patch.finishOrder)) {
+    const order = patch.finishOrder.map(n => Number(n)).filter(n => n > 0);
+    const byLane = new Map((next.athletes || []).map(a => [Number(a.lane), a]));
+    // 清空旧名次
+    next.athletes = (next.athletes || []).map(a => ({ ...a, place: '', result: a.result || '' }));
+    order.forEach((lane, idx) => {
+      const a = byLane.get(lane);
+      if (a) {
+        const i = next.athletes.findIndex(x => Number(x.lane) === lane);
+        if (i >= 0) next.athletes[i] = {
+          ...next.athletes[i],
+          place: String(idx + 1),
+          result: patch.resultsByLane?.[String(lane)] || next.athletes[i].result || '',
+        };
+      }
+    });
+    next.showPlaces = true;
+    delete next.finishOrder;
+    delete next.resultsByLane;
+  }
+
+  if (patch.clearPlaces) {
+    next.athletes = (next.athletes || []).map(a => ({ ...a, place: '' }));
+    next.showPodium = false;
+    delete next.clearPlaces;
+  }
+
+  if (patch.clockAction) applyClockAction(next, patch.clockAction);
+  delete next.clockAction;
+  delete next.templateId;
+  delete next.laneCount;
+
+  next.clockMs = currentClockMs(next);
+  if (!next.clockRunning) next.clock = next.clock || formatTrackClock(next.clockMs);
   scoreboardConfig = next;
-  io.emit('scoreboard:update', scoreboardConfig);
+  emitScoreboard();
   res.json(scoreboardConfig);
 });
 
@@ -595,6 +890,9 @@ io.on('connection', (socket) => {
 
   // 同步比分条
   socket.emit('scoreboard:update', scoreboardConfig);
+
+  // 同步转场预设
+  socket.emit('transition:update', transitionConfig);
 
   // 接收音频控制指令并广播给所有客户端
   socket.on('audio:setState', ({ streamKey, volume, muted }) => {

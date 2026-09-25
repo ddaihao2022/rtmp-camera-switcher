@@ -22,6 +22,7 @@ function OutputMonitor({ streamKey, streams }) {
   const [hidden, setHidden] = useState(false);
   const [error, setError] = useState(null);
   const [scoreboard, setScoreboard] = useState(null);
+  const [fx, setFx] = useState(null);
 
   useEffect(() => {
     fetch('http://localhost:3001/api/scoreboard')
@@ -30,6 +31,11 @@ function OutputMonitor({ streamKey, streams }) {
       .catch(() => {});
     const socket = io('http://localhost:3001');
     socket.on('scoreboard:update', setScoreboard);
+    socket.on('outputTransition', (p) => {
+      if (!p || p.type === 'cut') return;
+      setFx({ ...p, id: p.at || Date.now() });
+      setTimeout(() => setFx(null), (p.duration || 500) + 80);
+    });
     return () => socket.disconnect();
   }, []);
 
@@ -128,6 +134,13 @@ function OutputMonitor({ streamKey, streams }) {
             muted
             playsInline
           />
+          {fx && (
+            <div
+              className={`pgm-fx pgm-fx-${fx.type} pgm-fx-dir-${fx.direction || 'left'}`}
+              style={{ '--fx-duration': `${fx.duration || 500}ms` }}
+              aria-hidden="true"
+            />
+          )}
           <ScoreboardOverlay config={scoreboard} />
           {!isLive && (
             <div className="output-monitor-msg">等待 {streamKey} 上线…</div>

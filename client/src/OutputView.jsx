@@ -1,14 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
-import flvjs from 'flv.js';
 import './OutputView.css';
 import './components/ScoreboardOverlay.css';
-import { buildFlvUrl, getUnsupportedCodecMessage, isBrowserPlayableStream } from './utils/stream';
-import { FLV_PROGRAM_OPTIONS, startCatchUp, tryPlay } from './utils/lowLatency';
 import ScoreboardOverlay from './components/ScoreboardOverlay';
+import MediaLayer from './components/MediaLayer';
 
 const API_HOST = 'http://localhost:3001';
-const FLV_HOST = 'http://localhost:8000';
 
 const POSITION_STYLE = {
   'top-left':     { top: 0,    left: 0,    bottom: 'auto', right: 'auto' },
@@ -56,9 +53,6 @@ function Watermark({ config }) {
 }
 
 function OutputView() {
-  const videoRef = useRef(null);
-  const playerRef = useRef(null);
-  // URL 固定信号源（多路 HDMI 分发时 pin 到某一路）；空则跟随全局 PROGRAM
   const [pinnedSource] = useState(() => {
     try {
       return new URLSearchParams(window.location.search).get('source') || null;
@@ -67,18 +61,46 @@ function OutputView() {
     }
   });
   const [streamKey, setStreamKey] = useState(pinnedSource);
+  const [outgoingKey, setOutgoingKey] = useState(null);
+  const [fx, setFx] = useState(null); // { type, duration, direction, id }
   const [streams, setStreams] = useState([]);
   const [error, setError] = useState(null);
   const [watermark, setWatermark] = useState(null);
   const [scoreboard, setScoreboard] = useState(null);
+  const fxTimer = useRef(null);
+  const lastTransitionAt = useRef(0);
+  const inTransition = useRef(false);
 
-  // 仅在输出视图下打开「全屏黑背景 + 隐藏鼠标」模式,卸载时复原
   useEffect(() => {
     document.body.classList.add('output-mode');
     return () => document.body.classList.remove('output-mode');
   }, []);
 
-  // 固定源模式：streamKey 始终为 pinned；否则跟随全局输出
+  useEffect(() => () => clearTimeout(fxTimer.current), []);
+
+  const clearFx = useCallback(() => {
+    clearTimeout(fxTimer.current);
+    setFx(null);
+    setOutgoingKey(null);
+    inTransition.current = false;
+  }, []);
+
+  const beginTransition = useCallback((payload) => {
+    if (pinnedSource) return;
+    const { from, to, type, duration, direction, at } = payload || {};
+    if (!to || !from || from === to || type === 'cut') return;
+    if (at && at === lastTransitionAt.current) return;
+    if (at) lastTransitionAt.current = at;
+
+    clearTimeout(fxTimer.current);
+    inTransition.current = true;
+    setOutgoingKey(from);
+    setStreamKey(to);
+    const d = Math.max(120, Math.min(3000, Number(duration) || 500));
+    setFx({ type, duration: d, direction: direction || 'left', id: at || Date.now() });
+    fxTimer.current = setTimeout(clearFx, d + 80);
+  }, [pinnedSource, clearFx]);
+
   useEffect(() => {
     if (pinnedSource) {
       setStreamKey(pinnedSource);
@@ -90,118 +112,71 @@ function OutputView() {
       .catch(() => {});
   }, [pinnedSource]);
 
-  // 接收实时事件
   useEffect(() => {
     const socket = io(API_HOST);
     socket.on('streamUpdate', setStreams);
+    socket.on('outputTransition', beginTransition);
     socket.on('outputSelected', ({ streamKey: key }) => {
-      if (!pinnedSource) setStreamKey(key || null);
+      if (pinnedSource) return;
+      // 转场进行中由 outputTransition 接管；硬切直接切换
+      if (!inTransition.current) setStreamKey(key || null);
     });
     socket.on('watermark:update', setWatermark);
     socket.on('scoreboard:update', setScoreboard);
     return () => socket.disconnect();
-  }, [pinnedSource]);
+  }, [pinnedSource, beginTransition]);
 
-  // 拉取初始水印 / 比分条
   useEffect(() => {
     fetch(`${API_HOST}/api/watermark`).then(r => r.json()).then(setWatermark).catch(() => {});
     fetch(`${API_HOST}/api/scoreboard`).then(r => r.json()).then(setScoreboard).catch(() => {});
   }, []);
 
-  // 选中流变化时,重建播放器（PROGRAM 级低延迟配置）
+  // 转场结束后强制回到单层（防 timer 丢失）
   useEffect(() => {
-    const safeDestroy = () => {
-      if (playerRef.current) {
-        try {
-          playerRef.current.unload();
-          playerRef.current.detachMediaElement();
-          playerRef.current.destroy();
-        } catch (_) {}
-        playerRef.current = null;
-      }
-    };
+    if (!fx) return undefined;
+    const t = setTimeout(clearFx, fx.duration + 120);
+    return () => clearTimeout(t);
+  }, [fx, clearFx]);
 
-    safeDestroy();
-    setError(null);
-    if (!streamKey || !videoRef.current || !flvjs.isSupported()) return;
-
-    const matched = streams.find(s => s.streamKey === streamKey) || { streamKey };
-    if (!isBrowserPlayableStream(matched)) {
-      setError(getUnsupportedCodecMessage(matched));
-      return;
-    }
-    const url = buildFlvUrl(matched, FLV_HOST);
-
-    const player = flvjs.createPlayer(
-      { type: 'flv', url, isLive: true, hasAudio: false, hasVideo: true },
-      FLV_PROGRAM_OPTIONS
-    );
-    player.on(flvjs.Events.ERROR, (t, d) => setError(`${t}: ${d}`));
-    player.attachMediaElement(videoRef.current);
-    player.load();
-    const v = videoRef.current;
-    const onLoaded = () => tryPlay(v);
-    v.addEventListener('loadeddata', onLoaded, { once: true });
-
-    // 兜底追播：更激进，适合赛事直播
-    const stopCatchUp = startCatchUp(v, {
-      jumpLag: 0.55,
-      softLag: 0.3,
-      intervalMs: 300,
-      softRate: 1.3,
-    });
-
-    playerRef.current = player;
-
-    return () => {
-      stopCatchUp();
-      v?.removeEventListener('loadeddata', onLoaded);
-      safeDestroy();
-    };
-  }, [streamKey, streams]);
-
+  const handleError = useCallback((msg) => setError(msg), []);
   const isLive = streamKey && streams.some(s => s.streamKey === streamKey);
   const localItem = streams.find(s => s.streamKey === streamKey && s.type === 'local');
+  const showOutgoing = !!fx && !!outgoingKey && outgoingKey !== streamKey;
 
-  const localUrl = localItem
-    ? (localItem.filePath?.startsWith('blob:')
-        ? localItem.filePath
-        : `http://localhost:3001/api/local/stream/${encodeURIComponent(localItem.streamKey.replace(/^local\//, ''))}`)
-    : null;
+  const fxClass = fx
+    ? `fx fx-${fx.type}${fx.type === 'wipe' || fx.type === 'slide' ? ` fx-dir-${fx.direction}` : ''}`
+    : '';
+
+  const fxStyle = fx
+    ? { '--fx-duration': `${fx.duration}ms` }
+    : undefined;
 
   return (
-    <div className="output-root">
-      {streamKey ? (
-        <>
-          {localItem ? (
-            localItem.fileType === 'audio' ? (
-              <div className="output-audio-wrap">
-                <p className="output-audio-label">🎵 {localItem.fileName}</p>
-                <audio src={localUrl} autoPlay={localItem.autoplay ?? true}
-                  loop={localItem.loop ?? false} controls className="output-audio"
-                  ref={el => { if (el) el.playbackRate = localItem.playbackRate ?? 1.0; }} />
-              </div>
-            ) : localItem.fileType === 'image' ? (
-              <img src={localUrl} alt={localItem.fileName} className="output-video output-image" draggable={false} />
-            ) : (
-              <video src={localUrl} className="output-video"
-                autoPlay={localItem.autoplay ?? true} playsInline controls={false}
-                loop={localItem.loop ?? false}
-                ref={el => { if (el) el.playbackRate = localItem.playbackRate ?? 1.0; }} />
-            )
-          ) : (
-            <video ref={videoRef} className="output-video" autoPlay muted playsInline />
+    <div className={`output-root ${fxClass}`} style={fxStyle}>
+      {streamKey || outgoingKey ? (
+        <div className="output-stage">
+          {showOutgoing && (
+            <div className="media-layer layer-outgoing" key={`out-${outgoingKey}-${fx?.id}`}>
+              <MediaLayer streamKey={outgoingKey} streams={streams} onError={() => {}} />
+            </div>
+          )}
+          <div className={`media-layer layer-current ${showOutgoing ? 'layer-animating' : ''}`}
+            key={`cur-${streamKey}-${fx?.id || 'idle'}`}>
+            <MediaLayer streamKey={streamKey} streams={streams} onError={handleError} />
+          </div>
+          {(fx?.type === 'dip' || fx?.type === 'mix') && showOutgoing && (
+            <div className="fx-veil" aria-hidden="true" />
           )}
           <Watermark config={watermark} />
           <ScoreboardOverlay config={scoreboard} />
           {pinnedSource && (
             <div className="output-pin-badge">固定源 · {pinnedSource}</div>
           )}
-          {!isLive && !localItem && (
+          {streamKey && !isLive && !localItem && (
             <div className="output-msg"><p>等待 {streamKey} 上线...</p></div>
           )}
           {error && <div className="output-msg error"><p>{error}</p></div>}
-        </>
+        </div>
       ) : (
         <div className="output-msg">
           <p>未选择输出画面</p>

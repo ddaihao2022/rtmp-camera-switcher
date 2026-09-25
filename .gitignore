@@ -3,8 +3,16 @@ dist/
 client/dist/
 dist_electron/
 media/
+data/scoreboard.json
 *.log
 *.err
 .DS_Store
 .env
 server-smoke.pid
+# Office 临时锁文件
+~$*.docx
+~$*.doc
+~$*.xls
+~$*.xlsx
+~$*.ppt
+~$*.pptx

@@ -7,8 +7,11 @@ import OutputMonitor from './components/OutputMonitor';
 import SettingsModal from './components/SettingsModal';
 import LocalMediaPanel from './components/LocalMediaPanel';
 import RecordPanel from './components/RecordPanel';
+import TrackPanel from './components/TrackPanel';
+import SidebarSection from './components/SidebarSection';
 import { connectStream, disconnectStream, setVolume, setMute, onVuData } from './audio.js';
 import './App.css';
+import './components/ScoreboardOverlay.css';
 
 const socket = io('http://localhost:3001');
 
@@ -21,6 +24,13 @@ function App() {
   const [serverInfo, setServerInfo] = useState(null); // { rtmpBase, candidates: [...] }
   const [pickedBase, setPickedBase] = useState(null); // 用户在多网卡间手动切换
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [scoreboard, setScoreboard] = useState(null);
+  const [transition, setTransition] = useState({
+    type: 'cut',
+    duration: 500,
+    direction: 'left',
+  });
+  const [pgmFx, setPgmFx] = useState(null);
   const videoRefsMap = useRef(new Map());
   const audioStateRef = useRef({});
 
@@ -62,6 +72,10 @@ function App() {
     fetch('http://localhost:3001/api/audio/state')
       .then(r => r.json())
       .then(d => { audioStateRef.current = d; })
+      .catch(() => {});
+    fetch('http://localhost:3001/api/transition')
+      .then(r => r.json())
+      .then(d => { if (d?.type) setTransition(d); })
       .catch(() => {});
 
     refreshServerInfo();
@@ -110,12 +124,25 @@ function App() {
       }
     });
 
+    socket.on('scoreboard:update', setScoreboard);
+    socket.on('transition:update', setTransition);
+    // 导播台 PGM 转场闪示
+    socket.on('outputTransition', (payload) => {
+      if (!payload || payload.type === 'cut') return;
+      const id = payload.at || Date.now();
+      setPgmFx({ ...payload, id });
+      setTimeout(() => setPgmFx(null), (payload.duration || 500) + 100);
+    });
+
     return () => {
       socket.off('connect');
       socket.off('disconnect');
       socket.off('streamUpdate');
       socket.off('outputSelected');
       socket.off('audio:stateUpdate');
+      socket.off('scoreboard:update');
+      socket.off('transition:update');
+      socket.off('outputTransition');
     };
   }, [refreshServerInfo]);
 
@@ -161,7 +188,7 @@ function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streams]);
 
-  // 导播台：Enter / Space = CUT（预览 → 输出）
+  // 导播台：Enter / Space = CUT；T = 跑表开始/暂停；Shift+T = 清零
   useEffect(() => {
     if (viewMode !== 'director') return;
     const onKey = (e) => {
@@ -170,12 +197,18 @@ function App() {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         handleCut();
+        return;
+      }
+      if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        if (e.shiftKey) clockAction('reset');
+        else clockAction('toggle');
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, selectedStream, outputStream, streams]);
+  }, [viewMode, selectedStream, outputStream, streams, scoreboard]);
 
   // 进入导播台时若无预览，自动选第一路作为 PVW
   useEffect(() => {
@@ -198,7 +231,7 @@ function App() {
     handleSelectOutput(selectedStream.streamKey);
   };
 
-  // 导播台快捷改分（不打开设置）
+  // 导播台快捷改分 / 田径跑表
   const bumpScore = async (side, delta) => {
     try {
       const r = await fetch('http://localhost:3001/api/scoreboard');
@@ -212,6 +245,34 @@ function App() {
       });
     } catch (e) {
       console.error('改分失败', e);
+    }
+  };
+
+  const clockAction = async (action) => {
+    try {
+      await fetch('http://localhost:3001/api/scoreboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clockAction: action }),
+      });
+    } catch (e) {
+      console.error('跑表失败', e);
+    }
+  };
+
+  const isTeamBoard = scoreboard && scoreboard.mode === 'team';
+
+  const updateTransition = async (patch) => {
+    const next = { ...transition, ...patch };
+    setTransition(next);
+    try {
+      await fetch('http://localhost:3001/api/transition', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+    } catch (e) {
+      console.error('转场设置失败', e);
     }
   };
 
@@ -242,7 +303,7 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>📹 RTMP 赛事导播台</h1>
+        <h1>🏟 田径赛事导播台</h1>
         <div className="header-controls">
           <div className="status">
             <span className={`status-indicator ${serverStatus === '已连接' ? 'online' : 'offline'}`}></span>
@@ -256,8 +317,8 @@ function App() {
               </button>
               {viewMode === 'director' && (
                 <button className="view-mode-btn cut-btn" onClick={handleCut}
-                  title="将预览切到输出（Enter）">
-                  ✂ CUT
+                  title={`将预览切到输出（Enter）· 当前转场：${transition.type}`}>
+                  ▶ TAKE
                 </button>
               )}
             </>
@@ -273,62 +334,92 @@ function App() {
 
       <div className="main-content">
         <aside className="sidebar">
-          <h2>摄影设备列表</h2>
           <div className="sidebar-scroll">
-            <StreamList 
-              streams={liveStreams} 
-              selectedStream={selectedStream}
-              outputStream={outputStream}
-              onStreamSelect={handleStreamSelect}
-              onSelectOutput={handleSelectOutput}
-              indexOffset={0}
-            />
-            <LocalMediaPanel
-              localStreams={localStreams}
-              onRemove={(key) => setStreams(s => s.filter(x => x.streamKey !== key))}
-              onSelect={handleStreamSelect}
-              selectedStream={selectedStream}
-              outputStream={outputStream}
-              onSelectOutput={handleSelectOutput}
-              indexOffset={liveStreams.length}
-            />
-          </div>
+            {/* 赛事核心：田径置顶 */}
+            <SidebarSection
+              id="track"
+              title="田径直播"
+              icon="🏟"
+              defaultOpen
+            >
+              <TrackPanel />
+            </SidebarSection>
 
-          <div className="sidebar-bottom">
-            <div className="connection-info">
-              <h3>推流地址</h3>
-              <div className="rtmp-url">
-                <code>{activeBase ? `${activeBase}/<设备名>` : '获取中…'}</code>
-              </div>
-              <p className="hint">OBS：服务器填 {activeBase || '上述地址'}，串流密钥填设备名（如 cam1）</p>
-              {candidates.length > 1 && (
-                <div className="rtmp-candidates">
-                  <span className="hint">本机多网卡，连不上可切换：</span>
-                  <div className="rtmp-candidate-list">
-                    {candidates.map(c => (
-                      <button
-                        key={c.address}
-                        type="button"
-                        className={`rtmp-candidate ${c.virtual ? 'virtual' : ''} ${activeBase === c.rtmpBase ? 'active' : ''}`}
-                        onClick={() => setPickedBase(c.rtmpBase)}
-                        title={c.virtual ? `${c.name}（虚拟网卡，通常不可用）` : c.name}
-                      >
-                        {c.address}{c.virtual ? ' ·虚拟' : ''}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+            <SidebarSection
+              id="sources"
+              title="信号源"
+              icon="📹"
+              badge={`${liveStreams.length + localStreams.length}`}
+              defaultOpen
+            >
+              <StreamList
+                streams={liveStreams}
+                selectedStream={selectedStream}
+                outputStream={outputStream}
+                onStreamSelect={handleStreamSelect}
+                onSelectOutput={handleSelectOutput}
+                indexOffset={0}
+              />
+              <LocalMediaPanel
+                localStreams={localStreams}
+                onRemove={(key) => setStreams(s => s.filter(x => x.streamKey !== key))}
+                onSelect={handleStreamSelect}
+                selectedStream={selectedStream}
+                outputStream={outputStream}
+                onSelectOutput={handleSelectOutput}
+                indexOffset={liveStreams.length}
+              />
+            </SidebarSection>
+
+            <SidebarSection
+              id="output"
+              title="输出 / HDMI"
+              icon="🖥"
+              badge={outputStream || '未选'}
+              defaultOpen
+            >
               {outputStream && (
-                <div className="output-info">
-                  <h3>当前输出</h3>
-                  <p className="output-stream">📡 {outputStream}</p>
-                  <p className="hint">此画面已选为主输出</p>
+                <div className="output-info output-info--bar">
+                  <p className="output-stream">📡 PROGRAM · {outputStream}</p>
                 </div>
               )}
-            </div>
-            <HdmiOutputPanel streams={streams} />
-            <RecordPanel outputStream={outputStream} videoRefsMap={videoRefsMap.current} />
+              <HdmiOutputPanel streams={streams} />
+              <RecordPanel outputStream={outputStream} videoRefsMap={videoRefsMap.current} />
+            </SidebarSection>
+
+            <SidebarSection
+              id="rtmp"
+              title="推流地址"
+              icon="🔗"
+              defaultOpen={false}
+            >
+              <div className="connection-info">
+                <div className="rtmp-url">
+                  <code>{activeBase ? `${activeBase}/<设备名>` : '获取中…'}</code>
+                </div>
+                <p className="hint">OBS：服务器填 {activeBase || '上述地址'}，串流密钥填设备名（如 cam1）</p>
+                {candidates.length > 1 && (
+                  <div className="rtmp-candidates">
+                    <span className="hint">本机多网卡，连不上可切换：</span>
+                    <div className="rtmp-candidate-list">
+                      {candidates.map(c => (
+                        <button
+                          key={c.address}
+                          type="button"
+                          className={`rtmp-candidate ${c.virtual ? 'virtual' : ''} ${activeBase === c.rtmpBase ? 'active' : ''}`}
+                          onClick={() => setPickedBase(c.rtmpBase)}
+                          title={c.virtual ? `${c.name}（虚拟网卡，通常不可用）` : c.name}
+                        >
+                          {c.address}{c.virtual ? ' ·虚拟' : ''}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </SidebarSection>
+
+            <div className="sidebar-end-spacer" />
           </div>
         </aside>
 
@@ -338,6 +429,13 @@ function App() {
               <section className="director-monitors">
                 <div className="director-monitor director-pgm">
                   <div className="director-monitor-label pgm">PGM · PROGRAM</div>
+                  {pgmFx && pgmFx.type !== 'cut' && (
+                    <div
+                      className={`pgm-fx pgm-fx-${pgmFx.type} pgm-fx-dir-${pgmFx.direction || 'left'}`}
+                      style={{ '--fx-duration': `${pgmFx.duration || 500}ms` }}
+                      aria-hidden="true"
+                    />
+                  )}
                   {outputStream ? (
                     (() => {
                       const pgm = streams.find(s => s.streamKey === outputStream);
@@ -364,16 +462,79 @@ function App() {
               </section>
               <div className="director-toolbar">
                 <button className="cut-btn cut-btn--lg" onClick={handleCut}
-                  disabled={!selectedStream || selectedStream.streamKey === outputStream}>
-                  ✂ CUT / TAKE
+                  disabled={!selectedStream || selectedStream.streamKey === outputStream}
+                  title="将预览切到输出（Enter），使用当前转场">
+                  ▶ TAKE
                 </button>
-                <div className="director-score-quick" title="快捷改分（需在设置中启用比分条）">
-                  <button type="button" onClick={() => bumpScore('home', -1)}>主−</button>
-                  <button type="button" onClick={() => bumpScore('home', 1)}>主+</button>
-                  <button type="button" onClick={() => bumpScore('away', -1)}>客−</button>
-                  <button type="button" onClick={() => bumpScore('away', 1)}>客+</button>
+
+                <div className="transition-bar" role="group" aria-label="转场预设">
+                  <span className="transition-bar-label">转场</span>
+                  {[
+                    ['cut', '硬切'],
+                    ['mix', '叠化'],
+                    ['wipe', '划像'],
+                    ['dip', '黑场'],
+                    ['slide', '滑动'],
+                  ].map(([type, label]) => (
+                    <button
+                      key={type}
+                      type="button"
+                      className={`transition-chip ${transition.type === type ? 'active' : ''}`}
+                      onClick={() => updateTransition({ type })}
+                      title={
+                        type === 'cut' ? '瞬时切换' :
+                        type === 'mix' ? '交叉溶解' :
+                        type === 'wipe' ? '按方向划入新画面' :
+                        type === 'dip' ? '经黑场过渡' : '新画面推入'
+                      }
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <select
+                    className="transition-select"
+                    value={transition.direction || 'left'}
+                    onChange={e => updateTransition({ direction: e.target.value })}
+                    disabled={transition.type !== 'wipe' && transition.type !== 'slide'}
+                    title="划像 / 滑动方向"
+                  >
+                    <option value="left">← 左</option>
+                    <option value="right">→ 右</option>
+                    <option value="up">↓ 上</option>
+                    <option value="down">↑ 下</option>
+                  </select>
+                  <select
+                    className="transition-select"
+                    value={String(transition.duration || 500)}
+                    onChange={e => updateTransition({ duration: Number(e.target.value) })}
+                    disabled={transition.type === 'cut'}
+                    title="转场时长"
+                  >
+                    <option value="300">300ms</option>
+                    <option value="400">400ms</option>
+                    <option value="500">500ms</option>
+                    <option value="700">700ms</option>
+                    <option value="1000">1000ms</option>
+                    <option value="1500">1500ms</option>
+                  </select>
                 </div>
-                <span className="director-hint">数字键切输出 · Shift+数字切预览 · Enter CUT · 多画面单击预览 / 双击上输出</span>
+
+                <div className="director-score-quick" title="跑表 T/Shift+T · 球队改分（模式见侧栏）">
+                  <button type="button" onClick={() => clockAction('start')}>▶ 跑表</button>
+                  <button type="button" onClick={() => clockAction('stop')}>⏸ 暂停</button>
+                  <button type="button" onClick={() => clockAction('reset')}>↺ 清零</button>
+                  <button type="button" onClick={() => clockAction('lap')}>⌗ 记圈</button>
+                  {isTeamBoard && (
+                    <>
+                      <span className="director-score-divider" />
+                      <button type="button" onClick={() => bumpScore('home', -1)}>主−</button>
+                      <button type="button" onClick={() => bumpScore('home', 1)}>主+</button>
+                      <button type="button" onClick={() => bumpScore('away', -1)}>客−</button>
+                      <button type="button" onClick={() => bumpScore('away', 1)}>客+</button>
+                    </>
+                  )}
+                </div>
+                <span className="director-hint">Enter/TAKE 用当前转场 · 数字键切源 · Shift+数字预览 · T 跑表</span>
               </div>
               <section className="director-multiview">
                 {streams.map((stream, i) => {

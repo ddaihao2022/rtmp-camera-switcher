@@ -84,6 +84,471 @@
   letter-spacing: 0.04em;
 }
 
+/* ===== 田径信息条 ===== */
+.track-bug {
+  display: inline-flex;
+  flex-direction: column;
+  background: rgba(8, 10, 16, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', sans-serif;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  min-width: min(720px, 88vw);
+  max-width: 96vw;
+}
+
+.track-bug-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.35), rgba(15, 23, 42, 0.9) 40%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.track-event {
+  font-size: clamp(14px, 1.7vw, 18px);
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.04em;
+}
+
+.track-round {
+  font-size: clamp(11px, 1.2vw, 13px);
+  font-weight: 600;
+  color: #fde68a;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(253, 230, 138, 0.35);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.track-clock {
+  margin-left: auto;
+  font-size: clamp(16px, 2vw, 22px);
+  font-weight: 700;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  font-family: 'SF Mono', 'Consolas', 'Menlo', monospace;
+}
+.track-clock.running {
+  color: #4ade80;
+  text-shadow: 0 0 10px rgba(74, 222, 128, 0.45);
+}
+
+.track-lanes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px 10px;
+}
+
+.track-lane-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 4px 8px;
+  min-width: 72px;
+}
+
+.track-lane-no {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: #f59e0b;
+  color: #111;
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.track-lane-name {
+  font-size: clamp(12px, 1.3vw, 14px);
+  font-weight: 600;
+  color: #f5f5f7;
+  white-space: nowrap;
+}
+
+.track-place {
+  font-size: 12px;
+  font-weight: 800;
+  color: #fbbf24;
+  min-width: 1.2em;
+  text-align: center;
+}
+
+.track-result {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7dd3fc;
+  font-variant-numeric: tabular-nums;
+}
+
+.track-heat,
+.track-wind,
+.track-record,
+.track-attempt {
+  font-size: clamp(10px, 1.1vw, 12px);
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.track-heat {
+  color: #e5e7eb;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.track-wind {
+  color: #bae6fd;
+  background: rgba(14, 165, 233, 0.18);
+  border: 1px solid rgba(14, 165, 233, 0.35);
+}
+.track-wind.neg { color: #fde68a; border-color: rgba(253, 230, 138, 0.35); background: rgba(253, 230, 138, 0.12); }
+.track-record {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+.track-record.sb { color: #c4b5fd; border-color: rgba(167, 139, 250, 0.4); background: rgba(167, 139, 250, 0.15); }
+.track-attempt {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+.track-attempt em { font-style: normal; color: #7dd3fc; margin-left: 4px; }
+
+.track-lane-chip.gold { border-color: rgba(251, 191, 36, 0.7); box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.25); }
+.track-lane-chip.silver { border-color: rgba(203, 213, 225, 0.7); }
+.track-lane-chip.bronze { border-color: rgba(217, 119, 6, 0.7); }
+
+.track-unit {
+  font-style: normal;
+  font-size: 10px;
+  color: #9ca3af;
+  margin-left: 6px;
+  font-weight: 500;
+}
+
+.track-laps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  padding: 0 10px 8px;
+}
+.track-laps-label {
+  font-size: 10px;
+  color: #9ca3af;
+  font-weight: 600;
+  margin-right: 2px;
+}
+.track-lap-chip {
+  font-size: 11px;
+  font-family: 'SF Mono', Consolas, monospace;
+  color: #e5e7eb;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.track-podium {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px 10px;
+}
+.track-podium-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border-left: 3px solid #64748b;
+}
+.track-podium-row.place-1 { border-left-color: #fbbf24; background: rgba(251, 191, 36, 0.12); }
+.track-podium-row.place-2 { border-left-color: #cbd5e1; }
+.track-podium-row.place-3 { border-left-color: #d97706; }
+.track-podium-rank {
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  min-width: 1.2em;
+  text-align: center;
+}
+.track-podium-name { font-size: clamp(14px, 1.5vw, 18px); font-weight: 700; color: #fff; }
+.track-podium-unit { font-size: 12px; color: #9ca3af; }
+.track-podium-row .track-result { margin-left: auto; font-size: 16px; font-weight: 800; }
+
+.track-panel {
+  padding: 0.45rem 0.7rem 0.55rem;
+  border-top: none;
+  background: transparent;
+}
+.track-panel-head {
+  display: none; /* 分区标题已提供 */
+}
+.track-panel-event strong {
+  display: block;
+  font-size: 0.9rem;
+  color: #fff;
+  margin-bottom: 0.3rem;
+  letter-spacing: 0.02em;
+}
+.track-panel-event-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  margin-bottom: 0.35rem;
+  align-items: center;
+}
+.tp-chip {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #ddd;
+  border-radius: 999px;
+  padding: 0.16rem 0.48rem;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+.tp-chip:hover { background: rgba(255, 255, 255, 0.12); }
+.tp-chip--more.active,
+.tp-chip.active {
+  background: rgba(245, 158, 11, 0.22);
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #fde68a;
+}
+.track-panel-en {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.68rem;
+  color: #aaa;
+  font-weight: 500;
+  cursor: pointer;
+  margin-right: 0.15rem;
+}
+.track-panel-en input { accent-color: #f59e0b; width: 13px; height: 13px; }
+
+.track-panel-templates {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.28rem;
+  margin-bottom: 0.4rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+.track-panel-templates--open {
+  max-height: none;
+  flex-wrap: wrap;
+  overflow-x: visible;
+  overflow-y: visible;
+}
+.track-panel-templates::-webkit-scrollbar { height: 4px; }
+.track-panel-templates::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+.tp-tpl {
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+  border-radius: 6px;
+  padding: 0.16rem 0.4rem;
+  font-size: 0.66rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.tp-tpl:hover { background: rgba(59, 130, 246, 0.22); }
+.tp-tpl.active {
+  background: rgba(245, 158, 11, 0.25);
+  border-color: rgba(245, 158, 11, 0.55);
+  color: #fde68a;
+}
+
+.track-panel-clock {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 0.4rem;
+  margin-bottom: 0.35rem;
+}
+.tp-clock {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 1.4rem;
+  font-weight: 700;
+  text-align: center;
+  color: #e5e7eb;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  margin-bottom: 0.35rem;
+}
+.tp-clock.running { color: #4ade80; text-shadow: 0 0 12px rgba(74, 222, 128, 0.35); }
+.tp-clock-btns {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.28rem;
+}
+.tp-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #eee;
+  border-radius: 6px;
+  padding: 0.3rem 0.2rem;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+.tp-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.14); }
+.tp-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.tp-btn.primary {
+  background: rgba(245, 158, 11, 0.28);
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #fde68a;
+}
+.tp-btn.ghost { background: transparent; }
+.tp-hint {
+  display: none;
+}
+.tp-more {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  color: #999;
+  border-radius: 6px;
+  padding: 0.28rem;
+  font-size: 0.68rem;
+  cursor: pointer;
+  margin-bottom: 0.3rem;
+}
+.tp-more:hover,
+.tp-more.active {
+  color: #fde68a;
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.08);
+}
+.track-panel-wind,
+.track-panel-order-row {
+  display: flex;
+  gap: 0.3rem;
+  margin-bottom: 0.35rem;
+}
+.track-panel-wind input,
+.track-panel-order input,
+.tp-best {
+  flex: 1;
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.35);
+  border: 0.33px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  color: #eee;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.75rem;
+  font-family: inherit;
+}
+.track-panel-order label,
+.tp-label {
+  display: block;
+  font-size: 0.68rem;
+  color: #999;
+  margin-bottom: 0.2rem;
+}
+.track-panel-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+.tp-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  color: #bbb;
+  cursor: pointer;
+}
+.tp-toggle input { accent-color: #f59e0b; }
+.track-panel-field {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 8px;
+  padding: 0.4rem 0.45rem;
+}
+.track-panel-field strong {
+  font-variant-numeric: tabular-nums;
+  color: #fde68a;
+  min-width: 3em;
+  text-align: center;
+}
+.tp-best { max-width: 130px; }
+
+.connection-info {
+  padding: 0.5rem 0.85rem 0.65rem;
+}
+.connection-info h3 {
+  font-size: 0.875rem;
+  margin: 0 0 0.5rem;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+}
+
+/* ===== 设置：道次编辑器 ===== */
+.track-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.track-editor-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 48px 56px;
+  gap: 4px;
+  align-items: center;
+}
+.track-editor-lane {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: #f59e0b;
+  color: #111;
+  font-size: 12px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.track-editor input {
+  background: rgba(0, 0, 0, 0.35);
+  border: 0.33px solid rgba(255, 255, 255, 0.14);
+  border-radius: 5px;
+  color: #eee;
+  padding: 4px 6px;
+  font-size: 0.8rem;
+  font-family: inherit;
+  min-width: 0;
+  width: 100%;
+}
+.track-editor input:focus {
+  outline: none;
+  border-color: rgba(245, 158, 11, 0.55);
+}
+
 /* 输出窗固定源角标 */
 .output-pin-badge {
   position: absolute;

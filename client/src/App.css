@@ -117,10 +117,14 @@
   display: flex;
   flex: 1;
   overflow: hidden;
+  min-height: 0;
 }
 
 .sidebar {
-  width: 320px;
+  width: 340px;
+  min-width: 280px;
+  max-width: 40vw;
+  flex-shrink: 0;
   background: rgba(28, 28, 30, 0.65);
   backdrop-filter: saturate(180%) blur(40px);
   -webkit-backdrop-filter: saturate(180%) blur(40px);
@@ -129,30 +133,158 @@
   flex-direction: column;
   overflow: hidden;
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.04);
+  min-height: 0;
 }
 
-/* 流列表区：占用剩余空间，独立滚动 */
+/* 整侧栏单一滚动区：设备 / 田径 / 推流 / HDMI / 录制 都能滚到 */
 .sidebar-scroll {
   flex: 1;
   overflow-y: auto;
-  min-height: 0; /* 关键：让 flex 子项可以缩小 */
+  overflow-x: hidden;
+  min-height: 0;
+  height: 100%;
+  padding-bottom: 8px;
 }
 
-.sidebar-scroll::-webkit-scrollbar { width: 4px; }
-.sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
-.sidebar-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+.sidebar-scroll::-webkit-scrollbar { width: 6px; }
+.sidebar-scroll::-webkit-scrollbar-track { background: rgba(0,0,0,0.25); }
+.sidebar-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+.sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #666; }
 
-/* 底部固定区：推流地址 + HDMI + 录制，固定高度并自己滚动 */
-.sidebar-bottom {
+.sidebar-section-title {
+  margin: 0;
+  padding: 1rem 1.5rem 0.875rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  border-bottom: 0.33px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.92);
+  position: sticky;
+  top: 0;
+  background: rgba(28, 28, 30, 0.95);
+  backdrop-filter: blur(20px);
+  z-index: 5;
+}
+
+/* ===== 侧栏折叠分区 ===== */
+.sidebar-sec {
+  border-bottom: 0.33px solid rgba(255, 255, 255, 0.08);
+  background: rgba(28, 28, 30, 0.35);
+}
+.sidebar-sec.open {
+  background: transparent;
+}
+.sidebar-sec-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.65rem 0.85rem;
+  background: rgba(0, 0, 0, 0.28);
+  border: none;
+  border-bottom: 0.33px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  text-align: left;
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.sidebar-sec-head:hover {
+  background: rgba(0, 0, 0, 0.4);
+}
+.sidebar-sec-chevron {
+  width: 12px;
+  color: #888;
+  font-size: 0.7rem;
   flex-shrink: 0;
-  overflow-y: auto;
-  max-height: 55vh; /* 最多占视口 55%，避免把上方列表全挤走 */
-  border-top: 1px solid #2a2a2a;
+}
+.sidebar-sec-icon {
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+.sidebar-sec-title {
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-sec-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-sec-actions {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-left: 0.25rem;
+}
+.sidebar-sec-body {
+  padding: 0.35rem 0 0.55rem;
+}
+.sidebar-sec.closed .sidebar-sec-body {
+  display: none;
 }
 
-.sidebar-bottom::-webkit-scrollbar { width: 4px; }
-.sidebar-bottom::-webkit-scrollbar-track { background: transparent; }
-.sidebar-bottom::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+.empty-state-inline {
+  margin: 0;
+  padding: 0.55rem 1rem;
+  font-size: 0.78rem;
+  color: #777;
+  text-align: center;
+}
+.stream-list--compact {
+  padding: 0 0.5rem 0.35rem;
+}
+
+.sidebar-sec-body .hdmi-panel,
+.sidebar-sec-body .connection-info {
+  border-top: none;
+  padding-top: 0.35rem;
+}
+.sidebar-sec-body .hdmi-panel h3 {
+  display: none;
+}
+.sidebar-sec-body .local-panel {
+  border-top: none;
+}
+.sidebar-sec-body .local-panel-head {
+  padding-top: 0.35rem;
+}
+
+.output-info--bar {
+  margin: 0.25rem 0.75rem 0.4rem;
+  padding: 0.4rem 0.55rem;
+  background: rgba(52, 199, 89, 0.08);
+  border: 0.5px solid rgba(52, 199, 89, 0.25);
+  border-radius: 8px;
+}
+.output-info--bar h3,
+.output-info--bar .hint {
+  display: none;
+}
+.output-info--bar .output-stream {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #86efac;
+  word-break: break-all;
+}
+
+.sidebar-end-spacer {
+  height: 24px;
+}
 
 .sidebar h2 {
   padding: 1rem 1.5rem 0.875rem;
@@ -395,9 +527,11 @@
 
 .video-area {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: #000;
+  overflow: hidden;
 }
 
 .no-stream {
@@ -676,15 +810,21 @@
 @media (max-width: 768px) {
   .main-content {
     flex-direction: column;
+    overflow-y: auto;
   }
-  
+
   .sidebar {
     width: 100%;
-    max-height: 300px;
+    max-width: none;
+    max-height: min(50vh, 420px);
+    flex-shrink: 0;
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   }
-  
-  .video-js {
-    height: 300px;
+
+  .video-area {
+    min-height: 40vh;
+    flex: 1;
   }
 }
 
@@ -2052,6 +2192,124 @@
 }
 .director-score-quick button:active {
   background: rgba(59, 130, 246, 0.35);
+}
+.director-score-divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.18);
+  margin: 0 0.15rem;
+  align-self: center;
+}
+
+/* ===== 专业转场预设条 ===== */
+.transition-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  flex-wrap: wrap;
+  padding: 0.2rem 0.4rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+}
+.transition-bar-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #9ca3af;
+  letter-spacing: 0.06em;
+  margin-right: 0.15rem;
+  text-transform: uppercase;
+}
+.transition-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #d1d5db;
+  border-radius: 5px;
+  padding: 0.28rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.transition-chip:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.transition-chip.active {
+  background: rgba(239, 68, 68, 0.28);
+  border-color: rgba(239, 68, 68, 0.65);
+  color: #fecaca;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2);
+}
+.transition-select {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #e5e7eb;
+  border-radius: 5px;
+  padding: 0.22rem 0.3rem;
+  font-size: 0.7rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+.transition-select:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* 导播台 / PROGRAM 监看 转场闪示 */
+.pgm-fx {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  background: #000;
+}
+.pgm-fx-mix {
+  background: transparent;
+  animation: fxFadeVeil var(--fx-duration, 500ms) ease both;
+}
+.pgm-fx-dip {
+  animation: fxDipVeil var(--fx-duration, 500ms) ease both;
+}
+.pgm-fx-wipe.pgm-fx-dir-left,
+.pgm-fx-slide.pgm-fx-dir-left {
+  background: linear-gradient(90deg, #000 0%, #000 40%, transparent 55%);
+  animation: fxWipeBarH var(--fx-duration, 500ms) cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+.pgm-fx-wipe.pgm-fx-dir-right,
+.pgm-fx-slide.pgm-fx-dir-right {
+  background: linear-gradient(270deg, #000 0%, #000 40%, transparent 55%);
+  animation: fxWipeBarH var(--fx-duration, 500ms) cubic-bezier(0.4, 0, 0.2, 1) both reverse;
+}
+.pgm-fx-wipe.pgm-fx-dir-up,
+.pgm-fx-slide.pgm-fx-dir-up {
+  background: linear-gradient(180deg, #000 0%, #000 40%, transparent 55%);
+  animation: fxWipeBarV var(--fx-duration, 500ms) cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+.pgm-fx-wipe.pgm-fx-dir-down,
+.pgm-fx-slide.pgm-fx-dir-down {
+  background: linear-gradient(0deg, #000 0%, #000 40%, transparent 55%);
+  animation: fxWipeBarV var(--fx-duration, 500ms) cubic-bezier(0.4, 0, 0.2, 1) both reverse;
+}
+
+@keyframes fxFadeVeil {
+  0% { opacity: 0; background: #fff; }
+  40% { opacity: 0.35; background: #fff; }
+  100% { opacity: 0; background: #fff; }
+}
+@keyframes fxDipVeil {
+  0% { opacity: 0; }
+  45% { opacity: 1; }
+  55% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes fxWipeBarH {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+@keyframes fxWipeBarV {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(100%); }
 }
 
 .director-multiview {
