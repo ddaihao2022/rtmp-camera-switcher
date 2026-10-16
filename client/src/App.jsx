@@ -8,8 +8,11 @@ import SettingsModal from './components/SettingsModal';
 import LocalMediaPanel from './components/LocalMediaPanel';
 import RecordPanel from './components/RecordPanel';
 import TrackPanel from './components/TrackPanel';
+import TimingPanel from './components/TimingPanel';
 import SidebarSection from './components/SidebarSection';
+import ColorPanel from './components/ColorPanel';
 import { connectStream, disconnectStream, setVolume, setMute, onVuData } from './audio.js';
+import { GRADE_KEYS, normalizeGrade, resolveGrade } from './utils/color';
 import './App.css';
 import './components/ScoreboardOverlay.css';
 
@@ -24,7 +27,9 @@ function App() {
   const [serverInfo, setServerInfo] = useState(null); // { rtmpBase, candidates: [...] }
   const [pickedBase, setPickedBase] = useState(null); // 用户在多网卡间手动切换
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsDetached, setSettingsDetached] = useState(false);
   const [scoreboard, setScoreboard] = useState(null);
+  const [colorGrade, setColorGrade] = useState(null); // 调色：全局 + 机位覆盖
   const [transition, setTransition] = useState({
     type: 'cut',
     duration: 500,
@@ -33,6 +38,7 @@ function App() {
   const [pgmFx, setPgmFx] = useState(null);
   const videoRefsMap = useRef(new Map());
   const audioStateRef = useRef({});
+  const settingsPopupRef = useRef(null); // 浏览器（非 Electron）下弹出的设置窗口
 
   const handleVideoReady = useCallback((streamKey, el) => {
     videoRefsMap.current.set(streamKey, el);
@@ -60,6 +66,56 @@ function App() {
     }
   };
 
+  // 设置：已拉出为独立窗口时，点顶栏按钮聚焦那个窗口，不再叠一层弹窗
+  const handleOpenSettings = () => {
+    const api = window.electronAPI;
+    if (settingsDetached && api?.openSettingsWindow) {
+      api.openSettingsWindow();
+      return;
+    }
+    setSettingsOpen(true);
+  };
+
+  // 把设置拉出为独立窗口（可拖到第二块屏幕，主窗口继续监看画面）
+  const handleDetachSettings = () => {
+    setSettingsOpen(false);
+    const api = window.electronAPI;
+    if (api?.openSettingsWindow) {
+      api.openSettingsWindow();
+      setSettingsDetached(true);
+      return;
+    }
+    const { origin, pathname } = window.location;
+    settingsPopupRef.current = window.open(`${origin}${pathname}?view=settings`, '_blank',
+      'width=780,height=920,menubar=no,toolbar=no');
+    setSettingsDetached(true);
+  };
+
+  // 浏览器（非 Electron）下没有主进程状态可查，轮询弹窗是否已关闭
+  useEffect(() => {
+    if (!settingsDetached || window.electronAPI?.getSettingsWindowStatus) return undefined;
+    const timer = setInterval(() => {
+      if (!settingsPopupRef.current || settingsPopupRef.current.closed) {
+        setSettingsDetached(false);
+        clearInterval(timer);
+      }
+    }, 800);
+    return () => clearInterval(timer);
+  }, [settingsDetached]);
+
+  // 独立设置窗口开/关状态同步
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (!api?.getSettingsWindowStatus) return undefined;
+    api.getSettingsWindowStatus()
+      .then(s => setSettingsDetached(!!s?.open))
+      .catch(() => {});
+    const offChanged = api.onSettingsWindowChanged?.(d => setSettingsDetached(!!d?.open));
+    // 独立窗口点「收回主界面」→ 这里把弹窗重新打开
+    const offRestore = api.onSettingsRestore?.(() => setSettingsOpen(true));
+    return () => { offChanged?.(); offRestore?.(); };
+  }, []);
+
   // 定时拉取内网推流地址：IP 变化(换网/DHCP/开关VPN)后侧边栏能自动纠正
   const refreshServerInfo = useCallback(() => {
     fetch('http://localhost:3001/api/server-info')
@@ -76,6 +132,15 @@ function App() {
     fetch('http://localhost:3001/api/transition')
       .then(r => r.json())
       .then(d => { if (d?.type) setTransition(d); })
+      .catch(() => {});
+    fetch('http://localhost:3001/api/color')
+      .then(r => r.json())
+      .then(d => setColorGrade(normalizeGrade(d)))
+      .catch(() => {});
+    // 成绩条：录制导出「有成绩条」那份要用它烧录叠加层
+    fetch('http://localhost:3001/api/scoreboard')
+      .then(r => r.json())
+      .then(setScoreboard)
       .catch(() => {});
 
     refreshServerInfo();
@@ -126,6 +191,8 @@ function App() {
 
     socket.on('scoreboard:update', setScoreboard);
     socket.on('transition:update', setTransition);
+    // 调色参数变更（任意窗口修改后全网同步）
+    socket.on('color:update', (d) => setColorGrade(normalizeGrade(d)));
     // 导播台 PGM 转场闪示
     socket.on('outputTransition', (payload) => {
       if (!payload || payload.type === 'cut') return;
@@ -143,6 +210,7 @@ function App() {
       socket.off('scoreboard:update');
       socket.off('transition:update');
       socket.off('outputTransition');
+      socket.off('color:update');
     };
   }, [refreshServerInfo]);
 
@@ -159,12 +227,15 @@ function App() {
     setViewMode((m) => (m === 'director' ? m : 'single'));
   };
 
-  // 数字快捷键：1~9 切换预览，Shift+1~9 切换输出
+  // 数字快捷键（标准导播台语义）：
+  //   导播台模式：1~9 = 把该路切到预览(PVW)，主输出(PGM)不动；Shift+1~9 = 直接切主输出
+  //   其它视图：数字键沿用旧习惯（置预览 + 切主输出），避免单屏/网格操作员误操作
   useEffect(() => {
     const onKeyDown = (e) => {
-      // 输入框/textarea 获焦时不拦截
+      // 输入框/textarea 获焦、输入法组合中不拦截
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.isComposing || e.keyCode === 229) return;
 
       const num = parseInt(e.key, 10);
       if (isNaN(num) || num < 1 || num > 9) return;
@@ -175,18 +246,23 @@ function App() {
 
       e.preventDefault();
       if (e.shiftKey) {
-        // Shift+数字 → 仅切换预览
-        handleStreamSelect(target);
-      } else {
-        // 数字 → 直接切换输出（同时切换预览）
+        // Shift+数字 → 直接切换主输出（走当前转场），同时置为预览
         handleSelectOutput(target.streamKey);
         handleStreamSelect(target);
+        return;
+      }
+
+      // 数字 → 仅置为预览(PVW)，不碰主输出
+      handleStreamSelect(target);
+      if (viewMode !== 'director') {
+        // 非导播台视图没有 TAKE 按钮，保留"数字直接切输出"的旧行为
+        handleSelectOutput(target.streamKey);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streams]);
+  }, [streams, viewMode]);
 
   // 导播台：Enter / Space = CUT；T = 跑表开始/暂停；Shift+T = 清零
   useEffect(() => {
@@ -203,6 +279,19 @@ function App() {
         e.preventDefault();
         if (e.shiftKey) clockAction('reset');
         else clockAction('toggle');
+        return;
+      }
+      // 选手介绍模式：[ / ] 上一位·下一位，I 上屏/隐藏
+      if (scoreboard?.mode === 'intro') {
+        if (e.key === '[' || e.key === ']') {
+          e.preventDefault();
+          introAction(e.key === ']' ? 'next' : 'prev');
+          return;
+        }
+        if (e.key === 'i' || e.key === 'I') {
+          e.preventDefault();
+          introAction('toggle');
+        }
       }
     };
     window.addEventListener('keydown', onKey);
@@ -217,6 +306,21 @@ function App() {
     if (!outputStream && streams[0]) handleSelectOutput(streams[0].streamKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, streams]);
+
+  // 节目单：PageDown = 下一项，PageUp = 上一项（一键换项 + 名册就位，现场不用打字）
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'PageDown' && e.key !== 'PageUp') return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      e.preventDefault();
+      programAction(e.key === 'PageDown' ? 'next' : 'prev');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleViewMode = () => {
     if (streams.length > 0) {
@@ -260,7 +364,36 @@ function App() {
     }
   };
 
+  // 节目单：上一项 / 下一项 / 跳到第 N 项（赛程紧凑时一键换项，名册自动就位）
+  const programAction = async (action, index) => {
+    try {
+      await fetch('http://localhost:3001/api/scoreboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          action === 'apply' ? { programAction: 'apply', programIndex: index } : { programAction: action },
+        ),
+      });
+    } catch (e) {
+      console.error('节目单切换失败', e);
+    }
+  };
+
+  // 选手介绍：上一位 / 下一位 / 上屏 / 隐藏（服务端统一推进，HDMI 与监看同步）
+  const introAction = async (action) => {
+    try {
+      await fetch('http://localhost:3001/api/scoreboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ introAction: action }),
+      });
+    } catch (e) {
+      console.error('选手介绍切换失败', e);
+    }
+  };
+
   const isTeamBoard = scoreboard && scoreboard.mode === 'team';
+  const isIntroBoard = scoreboard && scoreboard.mode === 'intro';
 
   const updateTransition = async (patch) => {
     const next = { ...transition, ...patch };
@@ -300,6 +433,29 @@ function App() {
     return serverInfo?.rtmpBase || '';
   })();
 
+  // ─── 调色 ───────────────────────────────────────────────────────────────────
+  // 取某一路最终生效的参数（机位覆盖优先，未覆盖则用全局）
+  const gradeFor = useCallback((streamKey) => resolveGrade(colorGrade, streamKey), [colorGrade]);
+
+  const globalGrade = normalizeGrade(colorGrade);
+  const gradeOn = !!globalGrade.enabled;
+  const gradeTouched = GRADE_KEYS.some(k => Number(globalGrade[k]));
+  const gradeOverrideCount = Object.keys(colorGrade?.sources || {}).length;
+
+  const toggleGrade = async () => {
+    const next = { ...globalGrade, enabled: !globalGrade.enabled };
+    setColorGrade(prev => ({ ...(prev || {}), ...next }));
+    try {
+      await fetch('http://localhost:3001/api/color', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: 'global', patch: { enabled: next.enabled } }),
+      });
+    } catch (e) {
+      console.error('调色开关失败', e);
+    }
+  };
+
   return (
     <div className="app">
       <header className="header">
@@ -326,8 +482,25 @@ function App() {
           <button className="view-mode-btn audio-open-btn" onClick={handleOpenAudio}>
             🎚 音频混音台
           </button>
-          <button className="view-mode-btn settings-btn" onClick={() => setSettingsOpen(true)}>
+          <button
+            className={`view-mode-btn grade-open-btn ${gradeOn ? 'is-on' : ''}`}
+            onClick={toggleGrade}
+            title={`全局调色：${gradeOn ? '已启用（点击关闭）' : '已关闭（点击启用）'} · 参数在左侧「画面调色」`}
+          >
+            🎨 调色 {gradeOn ? '开' : '关'}
+          </button>
+          <button className="view-mode-btn settings-btn" onClick={handleOpenSettings}
+            title={settingsDetached
+              ? '设置已在独立窗口中打开（点击聚焦该窗口）'
+              : '打开设置弹窗'}>
             ⚙️ 设置
+          </button>
+          <button
+            className={`view-mode-btn settings-popout-btn ${settingsDetached ? 'is-on' : ''}`}
+            onClick={handleDetachSettings}
+            title="把设置拉出为独立窗口：可拖到第二块屏幕，主窗口继续监看画面（Ctrl+,）"
+          >
+            ⧉ 独立窗口
           </button>
         </div>
       </header>
@@ -343,6 +516,17 @@ function App() {
               defaultOpen
             >
               <TrackPanel />
+            </SidebarSection>
+
+            {/* 手动计时：多位老师扫码录成绩 → 去极值平均 → 一键回传叠加层 */}
+            <SidebarSection
+              id="timing"
+              title="计时录入"
+              icon="⏱"
+              badge="扫码录成绩"
+              defaultOpen={false}
+            >
+              <TimingPanel />
             </SidebarSection>
 
             <SidebarSection
@@ -384,7 +568,26 @@ function App() {
                 </div>
               )}
               <HdmiOutputPanel streams={streams} />
-              <RecordPanel outputStream={outputStream} videoRefsMap={videoRefsMap.current} />
+              <RecordPanel
+                outputStream={outputStream}
+                grade={gradeFor(outputStream)}
+                scoreboard={scoreboard}
+                videoRefsMap={videoRefsMap.current}
+              />
+            </SidebarSection>
+
+            <SidebarSection
+              id="color"
+              title="画面调色"
+              icon="🎨"
+              badge={
+                gradeOverrideCount > 0
+                  ? `${gradeOn ? '开' : '关'} ·${gradeOverrideCount}机位`
+                  : (gradeOn ? '已启用' : '原片')
+              }
+              defaultOpen={false}
+            >
+              <ColorPanel compact streams={streams} />
             </SidebarSection>
 
             <SidebarSection
@@ -440,7 +643,7 @@ function App() {
                     (() => {
                       const pgm = streams.find(s => s.streamKey === outputStream);
                       return pgm ? (
-                        <VideoPlayer stream={pgm} compact={false} program
+                        <VideoPlayer stream={pgm} compact={false} program grade={gradeFor(pgm.streamKey)}
                           onVideoReady={handleVideoReady} onVideoUnmount={handleVideoUnmount} />
                       ) : (
                         <div className="director-empty">等待 {outputStream}</div>
@@ -453,10 +656,10 @@ function App() {
                 <div className="director-monitor director-pvw">
                   <div className="director-monitor-label pvw">PVW · 预览</div>
                   {selectedStream ? (
-                    <VideoPlayer stream={selectedStream} compact={false}
+                    <VideoPlayer stream={selectedStream} compact={false} grade={gradeFor(selectedStream.streamKey)}
                       onVideoReady={handleVideoReady} onVideoUnmount={handleVideoUnmount} />
                   ) : (
-                    <div className="director-empty">从下方多画面选择预览</div>
+                    <div className="director-empty">按数字键 1–9 或点击多画面选择预览</div>
                   )}
                 </div>
               </section>
@@ -519,7 +722,7 @@ function App() {
                   </select>
                 </div>
 
-                <div className="director-score-quick" title="跑表 T/Shift+T · 球队改分（模式见侧栏）">
+                <div className="director-score-quick" title="跑表 T/Shift+T · 球队改分 · 选手介绍 [ ]/I（模式见侧栏）">
                   <button type="button" onClick={() => clockAction('start')}>▶ 跑表</button>
                   <button type="button" onClick={() => clockAction('stop')}>⏸ 暂停</button>
                   <button type="button" onClick={() => clockAction('reset')}>↺ 清零</button>
@@ -533,8 +736,37 @@ function App() {
                       <button type="button" onClick={() => bumpScore('away', 1)}>客+</button>
                     </>
                   )}
+                  {isIntroBoard && (
+                    <>
+                      <span className="director-score-divider" />
+                      <button type="button" onClick={() => introAction('prev')}>◀ 上一位</button>
+                      <button type="button" onClick={() => introAction('next')}>下一位 ▶</button>
+                      <button
+                        type="button"
+                        className={scoreboard?.introVisible === false ? '' : 'on'}
+                        onClick={() => introAction('toggle')}
+                        title="上屏 / 隐藏（I）"
+                      >
+                        {scoreboard?.introVisible === false ? '＋ 上屏' : '－ 隐藏'}
+                      </button>
+                      <span className="intro-quick-current">
+                        {Number(scoreboard?.introIndex || 0) + 1}
+                        {' / '}
+                        {(scoreboard?.athletes || []).filter(a => String(a?.name || '').trim() || a?.photo).length}
+                      </span>
+                    </>
+                  )}
                 </div>
-                <span className="director-hint">Enter/TAKE 用当前转场 · 数字键切源 · Shift+数字预览 · T 跑表</span>
+
+                <button
+                  type="button"
+                  className={`director-grade-btn ${gradeOn ? 'on' : ''}`}
+                  onClick={toggleGrade}
+                  title="一键开关全局调色（参数在左侧「画面调色」中调整）"
+                >
+                  🎨 调色 {gradeOn ? (gradeTouched ? '开' : '开·中性') : '关'}
+                </button>
+                <span className="director-hint">Enter/TAKE 用当前转场 · 数字键 1–9 选预览 · Shift+数字直切输出 · T 跑表{isIntroBoard ? ' · [ ] 切换选手 · I 上屏/隐藏' : ''}</span>
               </div>
               <section className="director-multiview">
                 {streams.map((stream, i) => {
@@ -549,7 +781,7 @@ function App() {
                         </span>
                       )}
                       <div className={`director-tile ${isPgm ? 'on-pgm' : isPvw ? 'on-pvw' : ''}`}>
-                        <VideoPlayer stream={stream} compact
+                        <VideoPlayer stream={stream} compact grade={gradeFor(stream.streamKey)}
                           onVideoReady={handleVideoReady} onVideoUnmount={handleVideoUnmount}
                           onSelectPreview={handleStreamSelect}
                           onTake={(s) => { handleStreamSelect(s); handleSelectOutput(s.streamKey); }}
@@ -564,12 +796,14 @@ function App() {
             <div className={`video-grid grid-${Math.min(streams.length, 4)}`}>
               {streams.map((stream) => (
                 <div key={stream.streamKey} className="grid-item">
-                  <VideoPlayer stream={stream} compact={true} onVideoReady={handleVideoReady} onVideoUnmount={handleVideoUnmount} />
+                  <VideoPlayer stream={stream} compact={true} grade={gradeFor(stream.streamKey)}
+                    onVideoReady={handleVideoReady} onVideoUnmount={handleVideoUnmount} />
                 </div>
               ))}
             </div>
           ) : selectedStream ? (
-            <VideoPlayer stream={selectedStream} compact={false} onVideoReady={handleVideoReady} onVideoUnmount={handleVideoUnmount}
+            <VideoPlayer stream={selectedStream} compact={false} grade={gradeFor(selectedStream.streamKey)}
+              onVideoReady={handleVideoReady} onVideoUnmount={handleVideoUnmount}
               onEnded={(key) => {
                 // 顺序播放：当前本地媒体播完后自动切换到下一条（不循环的前提下）
                 const idx = localStreams.findIndex(s => s.streamKey === key);
@@ -597,9 +831,13 @@ function App() {
 
       {/* 导播台已有大 PGM 监看，隐藏右下角浮窗避免重复 */}
       {viewMode !== 'director' && (
-        <OutputMonitor streamKey={outputStream} streams={streams} />
+        <OutputMonitor streamKey={outputStream} streams={streams} grade={gradeFor(outputStream)} />
       )}
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onDetach={handleDetachSettings}
+      />
     </div>
   );
 }

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RTMP 手机推流端</string>
+    <string name="notif_channel_name">推流服务</string>
+    <string name="notif_channel_desc">保持相机与麦克风推流在后台运行</string>
+    <string name="notif_title">正在推流</string>
+</resources>

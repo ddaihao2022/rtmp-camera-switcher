@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>计时汇总台 · 去极值平均</title>
+<style>
+  :root{--bg:#0b1220;--panel:#131c2f;--panel2:#18233a;--line:#25324b;--ink:#e6edf7;--muted:#8aa0c0;
+        --brand:#3b82f6;--ok:#22c55e;--warn:#f59e0b;--bad:#ef4444}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  header{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+         position:sticky;top:0;background:rgba(11,18,32,.96);backdrop-filter:blur(6px);z-index:10}
+  h1{font-size:17px;margin:0;font-weight:800;letter-spacing:.3px}
+  .ev{font-weight:700;font-size:15px}
+  .ev small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#64748b}
+  .dot.on{background:#22c55e}.dot.off{background:#ef4444}
+  button{cursor:pointer;font:inherit;border:1px solid var(--line);background:var(--panel2);color:var(--ink);
+         border-radius:9px;padding:7px 12px;font-weight:600}
+  button:hover{border-color:#3b82f6}
+  button.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+  button.ok{background:var(--ok);border-color:var(--ok);color:#06240f}
+  button.danger{background:#3b1414;border-color:#7f1d1d;color:#fecaca}
+  button.sm{padding:4px 9px;font-size:12px;border-radius:7px}
+  .spacer{flex:1}
+  main{padding:16px 18px 60px;display:grid;gap:16px}
+  .grid{display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start}
+  @media (max-width:1080px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .card h2{margin:0 0 10px;font-size:14px;color:var(--muted);font-weight:700;letter-spacing:.4px}
+  table{width:100%;border-collapse:separate;border-spacing:0;font-variant-numeric:tabular-nums}
+  th,td{padding:9px 8px;text-align:center;border-bottom:1px solid var(--line);font-size:14px}
+  th{color:var(--muted);font-size:12px;font-weight:700;position:sticky;top:64px;background:var(--panel)}
+  td.lane{font-weight:800;font-size:16px}
+  td.name{text-align:left;color:var(--muted);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  td.val{font-family:ui-monospace,Menlo,Consolas,monospace;cursor:pointer;border-radius:8px}
+  td.val:hover{background:#1e2b45}
+  td.val.dropped{color:#64748b;text-decoration:line-through;background:#131d31}
+  td.val.mine{background:#1c2b4a}
+  td.avg{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:800;font-size:18px;color:#8ef0b0}
+  td.avg.pending{color:#64748b;font-size:14px;font-weight:600}
+  td.warn{background:#3b2a06}
+  .tag{display:inline-block;padding:1px 6px;border-radius:999px;font-size:11px;font-weight:700;background:#1f2c47;color:var(--muted)}
+  .tag.ok{background:#0f3d22;color:#86efac}.tag.warn{background:#3b2a06;color:#fcd34d}
+  .tag.bad{background:#3b1414;color:#fecaca}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px dashed #1e2b45;font-size:13px}
+  .kv b{font-weight:700}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .row.mt{margin-top:10px}
+  input[type=text],input[type=number],select{background:#0d1626;border:1px solid var(--line);color:var(--ink);
+        border-radius:8px;padding:7px 9px;font:inherit;min-width:0}
+  input[type=text]{font-family:ui-monospace,Menlo,Consolas,monospace}
+  .judgerow{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+  .judgerow input[type=text]{flex:1}
+  .qr{background:#fff;border-radius:12px;padding:8px;display:flex;align-items:center;justify-content:center}
+  .qr img{width:100%;max-width:230px;display:block}
+  .url{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;font-weight:700;color:#93c5fd;
+       word-break:break-all;margin:8px 0;text-align:center}
+  .hist{max-height:220px;overflow:auto;font-size:13px}
+  .hist div{padding:6px 0;border-bottom:1px dashed #1e2b45}
+  .empty{color:var(--muted);text-align:center;padding:18px 0}
+  #modal{position:fixed;inset:0;background:rgba(3,7,18,.72);display:flex;align-items:center;justify-content:center;z-index:50}
+  #modal .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;width:340px;max-width:92vw}
+  .hidden{display:none!important}
+  #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f172a;border:1px solid var(--line);
+         color:#fff;padding:10px 16px;border-radius:999px;opacity:0;transition:.18s;z-index:80;pointer-events:none}
+  #toast.show{opacity:1}
+  #toast.err{border-color:#7f1d1d}#toast.ok{border-color:#14532d}
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="conn"></span>
+  <h1>计时汇总台</h1>
+  <div class="ev" id="evTitle">—<small id="evMeta"></small></div>
+  <div class="spacer"></div>
+  <span class="tag" id="statTag">—</span>
+  <button class="primary" id="applyAll">写入成绩 + 名次</button>
+  <button id="resetRound" class="danger">清空本轮</button>
+</header>
+
+<main>
+  <div class="grid">
+    <section class="card">
+      <h2>各老师读数 / 去极值平均<span style="font-weight:400">（点击任一读数可修改或删除）</span></h2>
+      <div id="tableWrap"></div>
+      <div class="row mt">
+        <button class="ok" id="applyAll2">写入成绩 + 名次</button>
+        <button id="exportCsv">导出 CSV</button>
+        <span class="tag" id="hintTag"></span>
+      </div>
+    </section>
+
+    <div style="display:grid;gap:16px">
+      <section class="card">
+        <h2>成绩合成规则</h2>
+        <div class="kv"><span>去掉极值</span><b><label><input type="checkbox" id="trimEnabled"> 开启</label></b></div>
+        <div class="kv"><span>去掉最高 / 最低各</span><b>
+          <select id="dropCount"><option value="1">1 个</option><option value="2">2 个</option><option value="0">不去</option></select>
+        </b></div>
+        <div class="kv"><span>最少人数（达到才去极值）</span><b><input type="number" id="minJudges" min="3" max="9" style="width:64px"></b></div>
+        <div class="kv"><span>成绩精度</span><b>
+          <select id="roundTo"><option value="10">0.01 秒</option><option value="100">0.1 秒</option><option value="1">0.001 秒</option></select>
+        </b></div>
+        <div class="kv"><span>偏差告警阈值</span><b><input type="number" id="warnSpread" min="0" step="50" style="width:80px"> ms</b></div>
+        <div class="kv"><span>自动写入叠加层</span><b><label><input type="checkbox" id="autoApply"> 开启</label></b></div>
+        <div class="kv"><span>自动写入所需人数</span><b><input type="number" id="autoApplyMin" min="1" max="9" style="width:64px"></b></div>
+        <div style="font-size:11px;color:#64748b;line-height:1.5;margin:2px 0 4px">
+          自动写入：每一道都达到人数要求（=比赛完整结束）时自动回传，避免大屏在还没跑完时显示半截成绩。
+          有弃赛空道或想提前上屏时，直接点上面的「写入成绩 + 名次」。
+        </div>
+        <div class="kv"><span>老师页隐藏他人读数</span><b><label><input type="checkbox" id="hideOthers"> 是</label></b></div>
+        <div class="row mt"><button class="primary" id="saveTrim">保存规则</button></div>
+      </section>
+
+      <section class="card">
+        <h2>老师录入页（扫码进入）</h2>
+        <div class="qr"><img id="qr" alt="二维码"></div>
+        <div class="url" id="entryUrl">—</div>
+        <div class="row"><button id="copyUrl">复制网址</button><button id="openUrl">打开录入页</button>
+          <button id="gunBtn">发令（老师跑表同步启动）</button></div>
+      </section>
+
+      <section class="card">
+        <h2>计时裁判名单</h2>
+        <div id="judgeList"></div>
+        <div class="row mt">
+          <button id="addJudge">+ 添加裁判</button>
+          <button class="primary" id="saveJudges">保存名单</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>已完成轮次（最近 30）</h2>
+        <div class="hist" id="history"></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<div id="modal" class="hidden"><div class="box" id="modalBox"></div></div>
+<div id="toast"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(function () {
+  'use strict';
+  const API = location.origin;
+  const $ = (id) => document.getElementById(id);
+  const S = { t: null, cfg: null, judgesDraft: null };
+
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  function toast(msg, kind) {
+    const el = $('toast'); el.textContent = msg; el.className = 'show ' + (kind || '');
+    clearTimeout(toast._t); toast._t = setTimeout(() => { el.className = ''; }, 2000);
+  }
+  async function post(path, body) {
+    const r = await fetch(API + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.ok === false) throw new Error(d.error || ('请求失败 ' + r.status));
+    return d;
+  }
+
+  // ── 渲染 ──────────────────────────────────────────────────────────────
+  function renderHeader() {
+    const t = S.t, c = S.cfg || {};
+    if (!t) return;
+    const name = [c.category || t.event.category || '', String(c.eventName || t.event.eventName || '').replace(/^(男子|女子)/, '')].join('');
+    $('evTitle').firstChild.nodeValue = name || '未设置项目';
+    $('evMeta').textContent = [c.round || t.event.round, c.heat || t.event.heat, (t.event.lanes || 8) + ' 道'].filter(Boolean).join(' · ');
+    const st = t.stats || {};
+    $('statTag').className = 'tag ' + (st.completed ? 'ok' : st.readyLanes ? 'warn' : '');
+    $('statTag').textContent = '已录 ' + (st.submittedLanes || 0) + '/' + (st.lanes || 8) + ' 道 · 裁判 ' + (st.judgeCount || 0)
+      + ' 人' + (st.completed ? ' · 已写入叠加层' : '');
+  }
+
+  function renderTable() {
+    const t = S.t;
+    if (!t) { $('tableWrap').innerHTML = '<div class="empty">连接中…</div>'; return; }
+    const judges = t.judges || [];
+    const athletes = (S.cfg && S.cfg.athletes) || [];
+    const lanes = Object.values(t.lanes || {}).sort((a, b) => a.lane - b.lane);
+    let html = '<table><thead><tr><th>道次</th><th style="text-align:left">姓名</th>'
+      + judges.map(j => '<th>' + esc(j.name) + '</th>').join('')
+      + '<th>最高-最低</th><th>平均成绩</th><th>最终</th><th>名次</th><th>状态</th></tr></thead><tbody>';
+    for (const l of lanes) {
+      const a = athletes.find(x => Number(x.lane) === l.lane) || {};
+      const byJudge = {};
+      (l.values || []).forEach(v => { byJudge[v.judgeId] = v; });
+      html += '<tr><td class="lane">' + l.lane + '</td><td class="name">' + esc(a.name || '') + '</td>';
+      for (const j of judges) {
+        const v = byJudge[j.id];
+        html += v
+          ? '<td class="val ' + (v.dropped ? 'dropped' : '') + '" data-lane="' + l.lane + '" data-judge="' + j.id + '" title="点击修改">'
+            + v.text + '</td>'
+          : '<td class="val" data-lane="' + l.lane + '" data-judge="' + j.id + '" style="color:#475569" title="点击补录">—</td>';
+      }
+      const spread = l.count >= 2 ? l.spreadText : '';
+      const live = t.trim && t.trim.enabled !== false;
+      html += '<td style="color:#8aa0c0;font-size:13px">' + (l.dropped || []).join(' / ') + '</td>'
+        + '<td class="avg ' + (l.avg == null ? 'pending' : '') + ' ' + (l.warned ? 'warn' : '') + '" title="' + esc(l.reason || '') + '">'
+        + (l.avgText || '待录满 ' + ((t.trim && t.trim.minJudges) || 3) + ' 人') + '</td>'
+        + '<td class="avg" style="color:#fcd34d">' + (l.overrideText || l.finalText || '—') + (l.overrideText ? ' ✎' : '') + '</td>'
+        + '<td style="font-weight:800">' + (((t.places || {})[String(l.lane)]) || '—') + '</td>'
+        + '<td>' + (l.warned ? '<span class="tag warn">差异大 ' + esc(spread) + '</span>'
+            : l.count >= ((t.trim && t.trim.minJudges) || 3) ? '<span class="tag ok">' + l.count + ' 人已合成' + (live && l.drops ? ' 去' + l.drops + '极值' : '') + '</span>'
+            : '<span class="tag">' + l.count + ' 人</span>') + '</td></tr>';
+    }
+    html += '</tbody></table>';
+    if (!lanes.length) html = '<div class="empty">暂无道次</div>';
+    $('tableWrap').innerHTML = html;
+    $('hintTag').className = 'tag';
+    $('hintTag').textContent = '去掉最高 / 最低各 ' + ((S.t.trim && S.t.trim.dropCount) || 0) + ' 个，其余取平均';
+    $('tableWrap').querySelectorAll('td.val').forEach(td => td.addEventListener('click', () => openCell(Number(td.dataset.lane), td.dataset.judge)));
+  }
+
+  function renderTrim() {
+    const t = S.t; if (!t) return;
+    const tr = t.trim || {};
+    $('trimEnabled').checked = tr.enabled !== false;
+    $('dropCount').value = String(tr.dropCount ?? 1);
+    $('minJudges').value = tr.minJudges ?? 3;
+    $('roundTo').value = String(tr.roundTo ?? 10);
+    $('warnSpread').value = tr.warnSpreadMs ?? 300;
+    $('autoApply').checked = !!tr.autoApply;
+    $('autoApplyMin').value = tr.autoApplyMin ?? 3;
+    $('hideOthers').checked = !t.ui || t.ui.hideOthersOnEntry !== false;
+  }
+
+  function renderJudges() {
+    if (!S.judgesDraft) S.judgesDraft = JSON.parse(JSON.stringify((S.t && S.t.judges) || []));
+    $('judgeList').innerHTML = S.judgesDraft.map((j, i) => '<div class="judgerow" data-i="' + i + '">'
+      + '<input type="text" value="' + esc(j.name) + '" data-k="name">'
+      + '<label style="color:#8aa0c0;font-size:12px"><input type="checkbox" data-k="active" ' + (j.active !== false ? 'checked' : '') + '> 启用</label>'
+      + '<button class="sm danger" data-k="del">删</button></div>').join('')
+      || '<div class="empty">还没有裁判</div>';
+  }
+
+  function renderUrls() {
+    const t = S.t; if (!t || !t.urls) return;
+    $('entryUrl').textContent = t.urls.entry;
+    $('qr').src = API + '/api/timing/qr.svg?size=230&data=' + encodeURIComponent(t.urls.entry);
+  }
+
+  function renderHistory() {
+    const h = (S.t && S.t.history) || [];
+    $('history').innerHTML = h.length ? h.map(x => {
+      const e = x.event || {};
+      const done = Object.values(x.lanes || {}).filter(l => l.finalMs != null).length;
+      return '<div><b>' + esc(e.category + e.eventName + ' ' + (e.round || '') + ' ' + (e.heat || '')) + '</b>'
+        + '<span class="tag" style="margin-left:6px">' + done + ' 道</span>'
+        + '<span style="color:#64748b;margin-left:6px">' + new Date(x.at).toLocaleTimeString('zh-CN') + (x.appliedAt ? ' · 已写入' : ' · 未写入') + '</span></div>';
+    }).join('') : '<div class="empty">暂无历史</div>';
+  }
+
+  function renderAll() { renderHeader(); renderTable(); renderTrim(); renderUrls(); renderHistory(); }
+
+  // ── 单元格编辑 ────────────────────────────────────────────────────────
+  function openCell(lane, judgeId) {
+    const j = (S.t.judges || []).find(x => x.id === judgeId) || { name: judgeId };
+    const l = (S.t.lanes || {})[String(lane)] || {};
+    const cur = (l.values || []).find(v => v.judgeId === judgeId);
+    const box = $('modalBox');
+    box.innerHTML = '<h3 style="margin:0 0 10px">第 ' + lane + ' 道 · ' + esc(j.name) + '</h3>'
+      + '<div style="color:#8aa0c0;font-size:13px;margin-bottom:8px">'
+      + (cur ? '当前读数 ' + cur.text + ' 秒（' + (cur.src === 'stopwatch' ? '跑表抓取' : '手动输入') + '）' : '该老师尚未录入本道') + '</div>'
+      + '<input type="text" id="mInput" style="width:100%;padding:10px;font-size:18px" value="' + (cur ? cur.text : '') + '" placeholder="12.34 或 1:02.34">'
+      + '<div class="row mt"><button class="primary" id="mSave">保存</button>'
+      + '<button class="danger" id="mDel">删除这条</button><div class="spacer"></div><button id="mCancel">取消</button></div>';
+    $('modal').classList.remove('hidden');
+    $('mSave').onclick = async () => {
+      try { await post('/api/timing/entry', { judge: judgeId, lane, time: $('mInput').value, src: 'manual' });
+        $('modal').classList.add('hidden'); toast('已保存', 'ok'); } catch (e) { toast(e.message, 'err'); }
+    };
+    $('mDel').onclick = async () => {
+      try { await post('/api/timing/entry/delete', { judge: judgeId, lane });
+        $('modal').classList.add('hidden'); toast('已删除', 'ok'); } catch (e) { toast(e.message, 'err'); }
+    };
+    $('mCancel').onclick = () => $('modal').classList.add('hidden');
+    setTimeout(() => $('mInput').select(), 60);
+  }
+
+  // ── 数据 ──────────────────────────────────────────────────────────────
+  async function loadAll() {
+    const [a, b] = await Promise.all([
+      fetch(API + '/api/timing', { cache: 'no-store' }).then(r => r.json()).catch(() => null),
+      fetch(API + '/api/scoreboard', { cache: 'no-store' }).then(r => r.json()).catch(() => null),
+    ]);
+    if (a) S.t = a;
+    if (b) S.cfg = b;
+    if (S.t && !S.judgesDraft) S.judgesDraft = null;
+    renderAll();
+  }
+
+  // ── 事件 ──────────────────────────────────────────────────────────────
+  $('applyAll').onclick = $('applyAll2').onclick = async () => {
+    try {
+      const d = await post('/api/timing/apply', { by: '裁判长', withEvent: false });
+      const n = (d.written && d.written.appliedLanes || []).length;
+      toast('已回传 ' + n + ' 道成绩与名次到叠加层', 'ok');
+    } catch (e) { toast(e.message, 'err'); }
+  };
+  $('resetRound').onclick = async () => {
+    if (!confirm('清空本轮所有老师的录入数据？（历史记录保留）')) return;
+    try { await post('/api/timing/reset', { scope: 'round' }); toast('本轮已清空', 'ok'); } catch (e) { toast(e.message, 'err'); }
+  };
+  $('exportCsv').onclick = () => { window.location.href = API + '/api/timing/export.csv'; };
+  $('saveTrim').onclick = async () => {
+    try {
+      await post('/api/timing/config', {
+        trim: {
+          enabled: $('trimEnabled').checked,
+          dropCount: Number($('dropCount').value),
+          minJudges: Number($('minJudges').value),
+          roundTo: Number($('roundTo').value),
+          warnSpreadMs: Number($('warnSpread').value),
+          autoApply: $('autoApply').checked,
+          autoApplyMin: Number($('autoApplyMin').value),
+        },
+        ui: { hideOthersOnEntry: $('hideOthers').checked },
+      });
+      toast('规则已保存', 'ok');
+    } catch (e) { toast(e.message, 'err'); }
+  };
+  $('judgeList').addEventListener('input', (e) => {
+    const row = e.target.closest('.judgerow'); if (!row) return;
+    const i = Number(row.dataset.i); const k = e.target.dataset.k;
+    if (k === 'name') S.judgesDraft[i].name = e.target.value;
+    if (k === 'active') S.judgesDraft[i].active = e.target.checked;
+  });
+  $('judgeList').addEventListener('click', (e) => {
+    if (e.target.dataset.k !== 'del') return;
+    const row = e.target.closest('.judgerow');
+    S.judgesDraft.splice(Number(row.dataset.i), 1);
+    renderJudges();
+  });
+  $('addJudge').onclick = () => {
+    S.judgesDraft = S.judgesDraft || [];
+    S.judgesDraft.push({ id: 'j' + Date.now().toString(36).slice(-4), name: '计时' + (S.judgesDraft.length + 1), active: true });
+    renderJudges();
+  };
+  $('saveJudges').onclick = async () => {
+    try { await post('/api/timing/config', { judges: S.judgesDraft }); toast('名单已保存', 'ok'); }
+    catch (e) { toast(e.message, 'err'); }
+  };
+  $('copyUrl').onclick = async () => {
+    try { await navigator.clipboard.writeText($('entryUrl').textContent); toast('网址已复制', 'ok'); }
+    catch (e) { toast('复制失败，请手动选择网址', 'err'); }
+  };
+  $('openUrl').onclick = () => window.open($('entryUrl').textContent, '_blank');
+  $('gunBtn').onclick = async () => { try { await post('/api/timing/gun'); toast('已发令，老师端跑表自动启动', 'ok'); } catch (e) { toast(e.message, 'err'); } };
+  $('modal').addEventListener('click', (e) => { if (e.target.id === 'modal') $('modal').classList.add('hidden'); });
+
+  // ── 实时通道 ──────────────────────────────────────────────────────────
+  const socket = io(API, { transports: ['websocket', 'polling'] });
+  socket.on('connect', () => { $('conn').className = 'dot on'; });
+  socket.on('disconnect', () => { $('conn').className = 'dot off'; });
+  socket.on('timing:update', (d) => { S.t = d; renderAll(); });
+  socket.on('scoreboard:update', (d) => { S.cfg = d; renderAll(); });
+
+  loadAll();
+  setInterval(loadAll, 15000);
+})();
+</script>
+</body>
+</html>

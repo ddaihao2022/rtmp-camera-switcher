@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import { ScoreboardSection } from './ScoreboardPanel';
+import ProgramSection from './ProgramSection';
+import ColorPanel from './ColorPanel';
 
 const API = 'http://localhost:3001';
 
@@ -143,6 +145,20 @@ function WatermarkSection() {
         <input type="range" className="settings-slider" min="0" max="80" step="4"
           value={cfg.padding} onChange={e => set('padding', +e.target.value)} />
       </div>
+    </section>
+  );
+}
+
+// ─── 调色分组 ─────────────────────────────────────────────────────────────────
+function ColorSection() {
+  return (
+    <section className="settings-section">
+      <div className="settings-section-title">🎨 基础调色</div>
+      <ColorPanel />
+      <p className="settings-muted">
+        亮度/对比度/饱和度/色相为实时滤镜，色温、色调、暗角为叠加层；
+        全局参数作用于所有画面，也可为单路机位单独覆盖。
+      </p>
     </section>
   );
 }
@@ -326,8 +342,35 @@ function LogSection() {
   );
 }
 
+// ─── 设置分组集合（弹窗与独立窗口共用同一份内容） ─────────────────────────────
+export function SettingsBody() {
+  return (
+    <>
+      <ScoreboardSection />
+      <ProgramSection />
+      <ColorSection />
+      <HdmiSection />
+      <WatermarkSection />
+      <LogSection />
+    </>
+  );
+}
+
+// ─── 把设置拉出为独立窗口（Electron 走 IPC，浏览器退化为 window.open） ────────
+export function detachSettingsWindow() {
+  const api = typeof window !== 'undefined' ? window.electronAPI : null;
+  if (api?.openSettingsWindow) {
+    api.openSettingsWindow();
+    return;
+  }
+  if (typeof window === 'undefined') return;
+  const { origin, pathname } = window.location;
+  window.open(`${origin}${pathname}?view=settings`, '_blank',
+    'width=760,height=900,menubar=no,toolbar=no');
+}
+
 // ─── 主弹窗 ───────────────────────────────────────────────────────────────────
-export default function SettingsModal({ open, onClose }) {
+export default function SettingsModal({ open, onClose, onDetach }) {
   // 点击背景关闭
   const handleBackdrop = (e) => {
     if (e.target === e.currentTarget) onClose();
@@ -335,18 +378,24 @@ export default function SettingsModal({ open, onClose }) {
 
   if (!open) return null;
 
+  const detach = () => {
+    if (onDetach) onDetach();
+    else { detachSettingsWindow(); onClose(); }
+  };
+
   return (
     <div className="settings-backdrop" onClick={handleBackdrop}>
       <div className="settings-modal" role="dialog" aria-label="设置">
         <div className="settings-modal-header">
           <span>⚙️ 设置</span>
-          <button className="settings-close" onClick={onClose} aria-label="关闭">✕</button>
+          <div className="settings-header-actions">
+            <button className="settings-popout" onClick={detach}
+              title="把设置拉出为独立窗口，可拖到另一块屏幕">⧉ 独立窗口</button>
+            <button className="settings-close" onClick={onClose} aria-label="关闭">✕</button>
+          </div>
         </div>
         <div className="settings-modal-body">
-          <ScoreboardSection />
-          <HdmiSection />
-          <WatermarkSection />
-          <LogSection />
+          <SettingsBody />
         </div>
       </div>
     </div>

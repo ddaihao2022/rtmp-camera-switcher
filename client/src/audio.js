@@ -117,6 +117,33 @@ export function getChannelKeys() {
   return Array.from(channels.keys());
 }
 
+/**
+ * 为录制导出一路音频轨。
+ *
+ * 不从媒体元素取声（HTMLMediaElement.captureStream 在本运行时靠不住：
+ * 图片素材的 <img> 没有这个方法，flv.js 直播的 MSE <video> 录出来是 0 字节空片）。
+ * 改从既有 Web Audio 图里取：在 MediaElementSource → gain 链路后挂一个
+ * MediaStreamAudioDestinationNode，录到的音量自然跟随音频面板的推子 / 静音。
+ * 每次调用新建独立 destination，好让「无成绩条 / 有成绩条」两份成片各拿一条轨道。
+ *
+ * 返回 { track, stop }；stop() 断开该 destination，录制结束后必须调用。
+ */
+export function createRecordAudio(streamKey) {
+  const ch = channels.get(streamKey);
+  if (!ch) return null;
+  let dest;
+  try {
+    dest = getCtx().createMediaStreamDestination();
+    ch.gain.connect(dest);
+  } catch {
+    return null;
+  }
+  return {
+    track: dest.stream.getAudioTracks()[0] || null,
+    stop() { try { ch.gain.disconnect(dest); } catch {} },
+  };
+}
+
 /** 返回所有频道当前增益状态，供音频窗口初始化用 */
 export function getAllState() {
   const result = {};

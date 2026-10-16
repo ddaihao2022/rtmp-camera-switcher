@@ -6,11 +6,18 @@ import { useEffect, useRef } from 'react';
 import flvjs from 'flv.js';
 import { buildFlvUrl, getUnsupportedCodecMessage, isBrowserPlayableStream } from '../utils/stream';
 import { FLV_PROGRAM_OPTIONS, startCatchUp, tryPlay } from '../utils/lowLatency';
+import { buildFilter } from '../utils/color';
 
 const API = 'http://localhost:3001';
 const FLV_HOST = 'http://localhost:8000';
 
-export default function MediaLayer({ streamKey, streams = [], onError }) {
+/** 调色 → 内联 filter（叠加层由外层 GradeVeil 负责） */
+function gradeStyle(grade) {
+  const f = buildFilter(grade);
+  return f ? { filter: f } : undefined;
+}
+
+export default function MediaLayer({ streamKey, streams = [], grade = null, onError }) {
   const videoRef = useRef(null);
   const playerRef = useRef(null);
 
@@ -97,12 +104,13 @@ export default function MediaLayer({ streamKey, streams = [], onError }) {
       <video src={localUrl} className="output-video media-layer"
         autoPlay={localItem.autoplay ?? true} playsInline controls={false}
         loop={localItem.loop ?? false}
+        style={gradeStyle(grade)}
         ref={el => { if (el) el.playbackRate = localItem.playbackRate ?? 1.0; }} />
     );
   }
 
   return (
     <video ref={videoRef} className="output-video media-layer"
-      autoPlay muted playsInline />
+      autoPlay muted playsInline style={gradeStyle(grade)} />
   );
 }

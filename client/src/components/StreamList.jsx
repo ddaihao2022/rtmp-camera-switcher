@@ -23,7 +23,7 @@ function StreamList({ streams, selectedStream, outputStream, onStreamSelect, onS
             className={`stream-item ${selectedStream?.streamKey === stream.streamKey ? 'active' : ''} ${outputStream === stream.streamKey ? 'output' : ''}`}
           >
             {hotkey <= 9 && (
-              <span className="stream-hotkey" title={`按 ${hotkey} 切换输出，Shift+${hotkey} 仅预览`}>
+              <span className="stream-hotkey" title={`导播台：按 ${hotkey} 设为预览(PVW)，Shift+${hotkey} 直接切输出(PGM)`}>
                 {hotkey}
               </span>
             )}

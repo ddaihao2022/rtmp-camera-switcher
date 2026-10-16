@@ -2,10 +2,18 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import flvjs from 'flv.js';
 import { buildFlvUrl, getUnsupportedCodecMessage, isBrowserPlayableStream } from '../utils/stream';
 import { FLV_PREVIEW_OPTIONS, FLV_PROGRAM_OPTIONS, startCatchUp, tryPlay } from '../utils/lowLatency';
+import { buildFilter } from '../utils/color';
+import GradeVeil from './GradeVeil';
 
 const API = 'http://localhost:3001';
 
 const RATE_CYCLE = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+
+/** 调色参数 → 视频元素内联 filter */
+function gradeFilterStyle(grade) {
+  const f = buildFilter(grade);
+  return f ? { filter: f } : undefined;
+}
 
 async function patchLocalSettings(streamKey, patch) {
   const keyPart = streamKey.replace(/^local\//, '');
@@ -17,7 +25,7 @@ async function patchLocalSettings(streamKey, patch) {
 }
 
 // ─── 本地文件播放器（原生 video / audio / img） ──────────────────────────────
-function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount, onEnded }) {
+function LocalPlayer({ stream, compact, grade, onVideoReady, onVideoUnmount, onEnded }) {
   const mediaRef = useRef(null);
   const wrapperRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -133,20 +141,25 @@ function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount, onEnded })
       </div>
       <div className="video-wrapper" ref={wrapperRef} onDoubleClick={!isAudio ? toggleFullscreen : undefined}>
         {isImage ? (
+          /* crossOrigin 同上：图片也要进画布合成录制，跨域会污染画布 */
           <img
             ref={mediaRef}
             src={mediaUrl}
             alt={displayName}
             className="video-player local-image"
+            crossOrigin="anonymous"
             draggable={false}
           />
         ) : isAudio ? (
           <audio ref={mediaRef} src={mediaUrl} controls className="local-audio"
             autoPlay={autoplay} loop={loop} />
         ) : (
+          /* crossOrigin：本地素材走服务端 HTTP，带 CORS 才不算跨域污染画布（带调色录制需要） */
           <video ref={mediaRef} src={mediaUrl} className="video-player" controls playsInline
-            autoPlay={autoplay} loop={loop} />
+            crossOrigin="anonymous" autoPlay={autoplay} loop={loop} style={gradeFilterStyle(grade)} />
         )}
+        {/* 本地视频同样走调色；图片/音频素材不调色 */}
+        {!isImage && !isAudio && <GradeVeil grade={grade} />}
       </div>
       {!compact && (
         <div className="video-info">
@@ -164,7 +177,7 @@ function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount, onEnded })
 }
 
 // ─── RTMP / FLV 直播播放器 ────────────────────────────────────────────────────
-function LivePlayer({ stream, compact, program, onVideoReady, onVideoUnmount, onSelectPreview, onTake }) {
+function LivePlayer({ stream, compact, program, grade, onVideoReady, onVideoUnmount, onSelectPreview, onTake }) {
   const videoRef = useRef(null);
   const playerRef = useRef(null);
   const wrapperRef = useRef(null);
@@ -294,7 +307,10 @@ function LivePlayer({ stream, compact, program, onVideoReady, onVideoUnmount, on
         </div>
       </div>
       <div className="video-wrapper" ref={wrapperRef} onDoubleClick={toggleFullscreen}>
-        <video ref={videoRef} key={reloadKey} className="video-player" controls={!compact} playsInline muted={compact} />
+        <video ref={videoRef} key={reloadKey} className="video-player" controls={!compact} playsInline muted={compact}
+          style={gradeFilterStyle(grade)} />
+
+        <GradeVeil grade={grade} />
 
         <div className="video-stats-overlay">
           <div className="stats-line">延迟: <span className={stats.latency > 1000 ? 'warn' : ''}>{stats.latency}ms</span></div>
@@ -327,15 +343,16 @@ function LivePlayer({ stream, compact, program, onVideoReady, onVideoUnmount, on
 }
 
 // ─── 统一入口 ─────────────────────────────────────────────────────────────────
-function VideoPlayer({ stream, compact = false, program = false, onVideoReady, onVideoUnmount, onEnded, onSelectPreview, onTake }) {
+function VideoPlayer({ stream, compact = false, program = false, grade = null, onVideoReady, onVideoUnmount, onEnded, onSelectPreview, onTake }) {
   if (stream?.type === 'local') {
-    return <LocalPlayer stream={stream} compact={compact} onVideoReady={onVideoReady} onVideoUnmount={onVideoUnmount} onEnded={onEnded} />;
+    return <LocalPlayer stream={stream} compact={compact} grade={grade} onVideoReady={onVideoReady} onVideoUnmount={onVideoUnmount} onEnded={onEnded} />;
   }
   return (
     <LivePlayer
       stream={stream}
       compact={compact}
       program={program}
+      grade={grade}
       onVideoReady={onVideoReady}
       onVideoUnmount={onVideoUnmount}
       onSelectPreview={onSelectPreview}

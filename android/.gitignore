@@ -1,0 +1,16 @@
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+
+# 协议自测运行产物
+tools/rtmp-selftest/build/
+tools/rtmp-selftest/selftest.log
+hs_err_pid*.log

@@ -16,6 +16,7 @@ export default function TrackPanel() {
   const [liveMs, setLiveMs] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showTpl, setShowTpl] = useState(false);
+  const [showProgram, setShowProgram] = useState(false);
 
   useEffect(() => {
     fetch(`${API}/api/scoreboard`).then(r => r.json()).then(setCfg).catch(() => {});
@@ -102,8 +103,16 @@ export default function TrackPanel() {
   }
 
   const isTeam = cfg.mode === 'team';
+  const isIntro = cfg.mode === 'intro';
   const isField = cfg.eventKind === 'field';
   const shortEvent = `${cfg.category || ''}${String(cfg.eventName || '').replace(/^(男子|女子)/, '')}`;
+  const introRoster = (cfg.athletes || []).filter(a => String(a.name || '').trim() || a.photo);
+  const introIdx = Math.min(Math.max(0, Number(cfg.introIndex) || 0), Math.max(introRoster.length - 1, 0));
+  const introCur = introRoster[introIdx];
+  // 节目单：整场预载名册，现场一键切项（赛程紧凑时不用手打名字）
+  const program = cfg.program || [];
+  const programIdx = Math.max(0, Math.min(program.length - 1, Number(cfg.programIndex) || 0));
+  const programCur = program[programIdx];
 
   return (
     <div className="track-panel">
@@ -152,7 +161,106 @@ export default function TrackPanel() {
         </div>
       </div>
 
-      {isTeam ? (
+      {program.length > 0 && (
+        <div className="tp-program">
+          <div className="tp-program-head">
+            <span className="tp-program-tag">🗂 节目单</span>
+            <strong title={programCur?.label || ''}>
+              {programCur?.time ? `${programCur.time} ` : ''}{programCur?.eventName || '—'}
+            </strong>
+            <span className="tp-program-count">
+              {programIdx + 1}/{program.length}
+              {programCur?.heat ? ` · ${programCur.heat}` : ''}
+              {programCur?.count ? ` · ${programCur.count}人` : ''}
+            </span>
+          </div>
+          <div className="tp-program-btns">
+            <button type="button" className="tp-btn" disabled={busy}
+              onClick={() => post({ programAction: 'prev' })}>◀ 上一项</button>
+            <button type="button" className="tp-btn primary" disabled={busy}
+              title="切到下一节：项目 / 轮次 / 组次 / 名册一次就位（快捷键 PageDown）"
+              onClick={() => post({ programAction: 'next' })}>下一项 ▶</button>
+            <button type="button" className={`tp-btn ${showProgram ? 'active' : ''}`}
+              onClick={() => setShowProgram(v => !v)}>{showProgram ? '收起 ▴' : '全部 ▾'}</button>
+          </div>
+          {showProgram && (
+            <div className="track-panel-templates track-panel-templates--open">
+              {program.map((e, i) => (
+                <button key={e.id || i} type="button" disabled={busy}
+                  className={`tp-tpl ${i === programIdx ? 'active' : ''}`}
+                  onClick={() => post({ programAction: 'apply', programIndex: i })}>
+                  {e.time ? `${e.time} ` : ''}{e.eventName}{e.heat ? ` ${e.heat}` : ''}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {isIntro ? (
+        <div className="track-panel-intro">
+          <div className="tp-intro-now">
+            <span className="tp-intro-lane">{introCur?.lane ?? '—'}</span>
+            <div className="tp-intro-body">
+              <strong>{introCur?.name || '暂无选手'}</strong>
+              <span>
+                {[introCur?.unit, introCur?.bib && `No.${introCur.bib}`, introCur?.pb && `PB ${introCur.pb}`]
+                  .filter(Boolean).join(' · ') || '在设置 → 赛事信息条 → 选手介绍 中录入'}
+              </span>
+            </div>
+            <span className="tp-intro-count">
+              {introRoster.length ? `${introIdx + 1}/${introRoster.length}` : '0/0'}
+            </span>
+          </div>
+
+          <div className="tp-clock-btns">
+            <button type="button" className="tp-btn" disabled={busy}
+              onClick={() => post({ mode: 'intro', introAction: 'prev' })}>◀ 上一位</button>
+            <button type="button" className="tp-btn primary" disabled={busy}
+              onClick={() => post({ mode: 'intro', introAction: 'next' })}>下一位 ▶</button>
+            <button type="button" className="tp-btn" disabled={busy}
+              onClick={() => post({ mode: 'intro', introAction: 'toggle' })}>
+              {cfg.introVisible === false ? '上屏' : '隐藏'}
+            </button>
+            <button type="button" className="tp-btn ghost" disabled={busy}
+              onClick={() => post({ mode: 'track' })}>回田径</button>
+          </div>
+
+          <div className="track-panel-row">
+            <label className="tp-toggle">
+              <input type="checkbox" checked={!!cfg.introAuto} disabled={busy}
+                onChange={e => post({ introAuto: e.target.checked })} />
+              <span>自动轮播 {Math.round((Number(cfg.introAutoMs) || 8000) / 1000)}s</span>
+            </label>
+            <label className="tp-toggle">
+              <input type="checkbox" checked={cfg.introVisible !== false} disabled={busy}
+                onChange={e => post({ introVisible: e.target.checked })} />
+              <span>上屏</span>
+            </label>
+            <label className="tp-toggle">
+              <input type="checkbox" checked={cfg.introStyle === 'roster'} disabled={busy}
+                onChange={e => post({ introStyle: e.target.checked ? 'roster' : 'card' })} />
+              <span>名册</span>
+            </label>
+          </div>
+
+          {introRoster.length > 0 && (
+            <div className="track-panel-templates track-panel-templates--open">
+              {introRoster.map((a, i) => (
+                <button
+                  key={`${a.lane}-${i}`}
+                  type="button"
+                  className={`tp-tpl ${i === introIdx ? 'active' : ''}`}
+                  disabled={busy}
+                  onClick={() => post({ mode: 'intro', introIndex: i, introVisible: true })}
+                >
+                  {a.lane}·{a.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : isTeam ? (
         <p className="local-empty">球队模式 · 设置中可切回田径</p>
       ) : (
         <>

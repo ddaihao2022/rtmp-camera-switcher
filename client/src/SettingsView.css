@@ -1,0 +1,73 @@
+/* 独立设置窗口专属样式：把弹窗铺满整个窗口，宽屏下自动分两栏 */
+
+body.settings-mode,
+body.settings-mode #root {
+  height: 100%;
+  overflow: hidden;
+  background: #0f0f0f;
+}
+
+.settings-window {
+  width: 100vw;
+  height: 100vh;
+  background: #0f0f0f;
+}
+
+/* 铺满，不再居中浮起 */
+.settings-window .settings-backdrop {
+  position: static;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  display: block;
+  height: 100%;
+}
+
+.settings-window .settings-modal {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: #131316;
+}
+
+.settings-window .settings-modal-header {
+  padding: 0.85rem 1.15rem;
+  background: rgba(28, 28, 30, 0.72);
+}
+
+.settings-window-hint {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #555;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.settings-window .settings-window-body {
+  padding: 0.6rem 1rem 1.6rem;
+}
+
+/* 宽窗口（≥680px）两栏流动排布：分组不跨栏断开，天然错落 */
+@media (min-width: 680px) {
+  .settings-window .settings-window-body {
+    column-count: 2;
+    column-gap: 1.25rem;
+  }
+  .settings-window .settings-window-body > .settings-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    padding: 0.9rem 1rem;
+    border-bottom: 1px solid #242428;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.02);
+    margin-bottom: 0.9rem;
+  }
+}
+
+@media (min-width: 1120px) {
+  .settings-window .settings-window-body { column-count: 3; }
+}

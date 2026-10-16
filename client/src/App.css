@@ -1395,6 +1395,39 @@
   border-color: rgba(255, 255, 255, 0.2);
 }
 
+/* 弹窗头部：「独立窗口」+ 关闭 */
+.settings-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.settings-popout {
+  background: rgba(255, 255, 255, 0.06);
+  border: 0.5px solid rgba(255, 255, 255, 0.14);
+  color: #b9b9bf;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.28rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.settings-popout:hover {
+  background: rgba(102, 126, 234, 0.22);
+  border-color: rgba(102, 126, 234, 0.5);
+  color: #fff;
+}
+
+/* 顶栏「把设置拉出为独立窗口」按钮 */
+.settings-popout-btn.is-on {
+  background: rgba(52, 199, 89, 0.2);
+  border-color: rgba(52, 199, 89, 0.5);
+  color: #d7ffe4;
+}
+
 /* ===== 设置弹窗 ===== */
 .settings-backdrop {
   position: fixed;
@@ -1476,6 +1509,123 @@
 }
 
 .settings-saving { color: #f59e0b; animation: pulse 0.7s infinite; }
+
+/* ─── 名册批量导入 / 节目单 ─── */
+.roster-import {
+  margin: 0.5rem 0 0.7rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px dashed rgba(102, 126, 234, 0.4);
+  border-radius: 10px;
+  background: rgba(102, 126, 234, 0.07);
+}
+
+.roster-import-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+}
+
+.roster-import-link {
+  background: none;
+  border: none;
+  color: #93c5fd;
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.roster-import-link:hover { text-decoration: underline; }
+
+.roster-import-text {
+  width: 100%;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.roster-import-sample {
+  margin: 0.2rem 0 0.5rem;
+  padding: 0.45rem 0.55rem;
+  background: #0f0f12;
+  border: 1px solid #24242a;
+  border-radius: 8px;
+  color: #9ca3af;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 0.68rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.roster-import-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  margin-top: 0.4rem;
+}
+
+.roster-import-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 0.5px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 0.12rem 0.44rem;
+  font-size: 0.68rem;
+  color: #d4d4d8;
+}
+
+.roster-import-chip b { color: #fbbf24; margin-right: 2px; }
+
+.program-list {
+  display: grid;
+  gap: 0.28rem;
+  margin-top: 0.6rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.program-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid #24242a;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.program-row.on {
+  border-color: rgba(245, 158, 11, 0.55);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.program-row-idx {
+  width: 18px;
+  text-align: center;
+  font-size: 0.68rem;
+  color: #71717a;
+  font-variant-numeric: tabular-nums;
+}
+
+.program-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.program-row-main strong {
+  font-size: 0.76rem;
+  color: #e5e5e5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.program-row-main .settings-muted { font-size: 0.66rem; }
+
+.program-row .settings-pill { padding: 0.14rem 0.5rem; font-size: 0.68rem; }
+
 
 .settings-row {
   display: flex;
@@ -2220,6 +2370,51 @@
   background: rgba(255, 255, 255, 0.18);
   margin: 0 0.15rem;
   align-self: center;
+}
+
+/* 选手介绍：导播台快捷条 */
+.director-score-quick button.on {
+  background: rgba(245, 158, 11, 0.24);
+  border-color: rgba(245, 158, 11, 0.55);
+  color: #fde68a;
+}
+.intro-quick-current {
+  align-self: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fbbf24;
+  font-variant-numeric: tabular-nums;
+  padding: 0 0.25rem;
+  white-space: nowrap;
+}
+
+/* ===== 调色快捷开关（头部 / 导播台工具条） ===== */
+.grade-open-btn.is-on {
+  background: rgba(52, 199, 89, 0.22);
+  border-color: rgba(52, 199, 89, 0.55);
+  color: #d7ffe4;
+}
+
+.director-grade-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.92);
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.director-grade-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+.director-grade-btn.on {
+  background: rgba(52, 199, 89, 0.22);
+  border-color: rgba(52, 199, 89, 0.55);
+  color: #d7ffe4;
 }
 
 /* ===== 专业转场预设条 ===== */

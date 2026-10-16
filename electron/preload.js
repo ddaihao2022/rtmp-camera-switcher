@@ -42,8 +42,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // 音频窗口
   openAudioWindow: () => ipcRenderer.invoke('audio:open'),
+  // 设置窗口：可把设置拉出为独立窗口（拖到第二块屏幕）
+  openSettingsWindow: () => ipcRenderer.invoke('settings:open'),
+  closeSettingsWindow: () => ipcRenderer.invoke('settings:close'),
+  getSettingsWindowStatus: () => ipcRenderer.invoke('settings:status'),
+  // 把设置收回主界面弹窗（独立窗口内使用）
+  restoreSettingsWindow: () => ipcRenderer.invoke('settings:restore'),
+  onSettingsRestore: (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on('settings:restore', handler);
+    return () => ipcRenderer.removeListener('settings:restore', handler);
+  },
+  onSettingsWindowChanged: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('settings:changed', handler);
+    return () => ipcRenderer.removeListener('settings:changed', handler);
+  },
   // 录制
   saveRecording: (buffer, ext) => ipcRenderer.invoke('record:save', { buffer, ext }),
+  /**
+   * 一次落盘多份成片（无成绩条 / 有成绩条）
+   * @param {Array<{ buffer: ArrayBuffer, suffix: string, ext: string, base?: string }>} files
+   * @returns {Promise<{ success: boolean, filePaths: string[] }>}
+   */
+  saveRecordings: (files) => ipcRenderer.invoke('record:saveBatch', { files }),
   // 本地媒体文件
   selectLocalFiles: () => ipcRenderer.invoke('dialog:openFile'),
   // 将本地绝对路径转为 file:// URL（仅 Electron 环境有效）

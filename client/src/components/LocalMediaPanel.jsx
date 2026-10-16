@@ -155,7 +155,7 @@ export default function LocalMediaPanel({
               >
                 <div className="local-item-row">
                   {hotkey <= 9 && (
-                    <span className="stream-hotkey" title={`按 ${hotkey} 切换输出，Shift+${hotkey} 仅预览`}>{hotkey}</span>
+                    <span className="stream-hotkey" title={`导播台：按 ${hotkey} 设为预览(PVW)，Shift+${hotkey} 直接切输出(PGM)`}>{hotkey}</span>
                   )}
                   <span className="local-icon">{s.fileType === 'audio' ? '🎵' : s.fileType === 'image' ? '🖼' : '🎬'}</span>
                   <span className="local-name" title={s.fileName}>{s.fileName}</span>

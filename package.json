@@ -1,6 +1,6 @@
 {
   "name": "rtmp-camera-system",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "田径赛事导播台 · RTMP 多机位切换 / HDMI 多路分发 / 道次成绩与跑表",
   "main": "electron/main.js",
   "scripts": {
@@ -11,7 +11,19 @@
     "dev": "concurrently -k -n SERVER,CLIENT,APP -c blue,green,magenta \"npm:server\" \"npm:client\" \"wait-on http://localhost:5173 && npm run electron\"",
     "build": "npm run build:client && electron-builder",
     "build:dir": "npm run build:client && electron-builder --dir",
-    "install-all": "npm install && cd client && npm install"
+    "install-all": "npm install && cd client && npm install",
+    "test:timing": "node tests/timing.test.js",
+    "test:timing:e2e": "node tests/timing.e2e.js",
+    "test:intro": "node tests/intro.e2e.js",
+    "test:scoreboard": "node tests/scoreboard-canvas.test.mjs",
+    "test:roster": "node tests/roster-parse.test.mjs",
+    "test:program": "node tests/program-api.test.mjs",
+    "test:program:e2e": "node tests/program-flow.e2e.mjs",
+    "test:recording:e2e": "node tests/recording-dual.cdp.mjs",
+    "test:recording:sources": "node tests/recording-sources.e2e.mjs",
+    "test:settings-window": "node tests/settings-window.cdp.mjs",
+    "test:package": "node tests/package-smoke.mjs",
+    "test:port": "node tests/port-conflict.test.mjs"
   },
   "keywords": [
     "rtmp",
@@ -30,6 +42,7 @@
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "node-media-server": "^4.2.4",
+    "qrcode": "^1.5.4",
     "socket.io": "^4.6.1"
   },
   "devDependencies": {

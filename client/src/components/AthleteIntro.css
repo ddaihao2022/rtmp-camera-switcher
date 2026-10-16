@@ -1,0 +1,580 @@
+/* ═══════════════ 选手介绍叠加层 ═══════════════
+   使用容器查询单位（cqh/cqw），同一套样式在
+   HDMI 全屏大屏、PROGRAM 小监看、录像画面里等比一致。
+   每个尺寸都先给 px 兜底，再给容器单位覆盖。 */
+
+.scoreboard-overlay.scoreboard-intro-wrap {
+  inset: 0;
+  padding: 0;
+  z-index: 13;
+}
+
+.intro-root {
+  position: absolute;
+  inset: 0;
+  container-type: size;
+  display: flex;
+  color: #f5f5f7;
+  pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 内层框架：所有 cq 单位都在这里生效（cq 单位写在容器自身会退回按视口计算，
+   那样在小尺寸 PROGRAM 监看里比例会失真），因此外层容器不带任何 cq 尺寸。 */
+.intro-frame {
+  flex: 1 1 auto;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.intro-frame--card,
+.intro-frame--roster {
+  align-items: center;
+  justify-content: center;
+  padding: 5cqh 4cqw;
+}
+
+.intro-frame--lower {
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 4cqw 6cqh;
+}
+
+/* ── 通用：照片 ───────────────────────────────── */
+.intro-photo {
+  display: block;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.intro-photo--blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.7);
+  background: linear-gradient(145deg, #2b3446, #171d29);
+}
+
+/* 默认队徽是方形图案：整幅 contain 别把外圈裁掉，留一圈暗底衬托 */
+.intro-photo--default {
+  object-fit: contain;
+  padding: 6%;
+  background: radial-gradient(circle at 50% 44%, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03) 72%);
+}
+
+/* ── 通用：信息芯片 ───────────────────────────── */
+.intro-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8cqh 0.9cqw;
+  align-items: center;
+}
+
+.intro-chip {
+  font-size: 14px;
+  font-size: 3cqh;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.5cqh 1cqw;
+  border-radius: 999px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.intro-chip.bib {
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.intro-chip.lane {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.42);
+}
+
+.intro-chip.pb {
+  color: #bfdbfe;
+  background: rgba(59, 130, 246, 0.16);
+  border: 1px solid rgba(96, 165, 250, 0.4);
+}
+
+/* ── 通用：页眉 ───────────────────────────────── */
+.intro-head {
+  display: flex;
+  align-items: center;
+  gap: 1.4cqw;
+  flex-wrap: wrap;
+}
+
+.intro-head-tag {
+  font-size: 13px;
+  font-size: 2.6cqh;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #111;
+  background: #f59e0b;
+  padding: 0.6cqh 1.2cqw;
+  border-radius: 0.6cqh;
+}
+
+.intro-head-event {
+  font-size: 14px;
+  font-size: 2.9cqh;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.88);
+  letter-spacing: 0.03em;
+}
+
+.intro-head-count {
+  margin-left: auto;
+  font-size: 14px;
+  font-size: 3cqh;
+  font-weight: 800;
+  color: #fbbf24;
+  font-variant-numeric: tabular-nums;
+}
+
+.intro-head-count em {
+  font-style: normal;
+  opacity: 0.5;
+  margin: 0 0.2em;
+}
+
+/* ── 通用：进度条 ─────────────────────────────── */
+.intro-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  height: 0.6cqh;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.intro-progress-fill {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+  transform-origin: left center;
+  animation: intro-hold var(--intro-hold, 8000ms) linear both;
+}
+
+@keyframes intro-hold {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes intro-in {
+  from { opacity: 0; transform: translateY(2.4cqh) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes intro-in-left {
+  from { opacity: 0; transform: translateX(-3cqw); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ═══════════════ 样式一：单人卡 ═══════════════ */
+.intro-card {
+  position: relative;
+  display: flex;
+  gap: 2.2cqw;
+  align-items: stretch;
+  width: min(76cqw, 1180px);
+  min-width: 280px;
+  background: linear-gradient(135deg, rgba(11, 14, 20, 0.94), rgba(20, 26, 38, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-left: 0.6cqh solid #f59e0b;
+  border-radius: 1.2cqh;
+  overflow: hidden;
+  box-shadow: 0 1.4cqh 4.2cqh rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: intro-in 0.5s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+}
+
+.intro-card-photo {
+  flex: 0 0 auto;
+}
+
+.intro-card .intro-photo {
+  width: 26cqw;
+  height: 38cqh;
+  min-width: 90px;
+  min-height: 130px;
+  border-radius: 0;
+}
+
+.intro-card .intro-photo--blank {
+  font-size: 24px;
+  font-size: 8cqh;
+}
+
+.intro-card-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1.2cqh;
+  padding: 3cqh 2.4cqw 3cqh 0;
+}
+
+.intro-name-row {
+  display: flex;
+  align-items: center;
+  gap: 1.4cqw;
+  min-width: 0;
+}
+
+.intro-lane-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 6cqh;
+  height: 6cqh;
+  min-width: 26px;
+  min-height: 26px;
+  border-radius: 1cqh;
+  background: rgba(245, 158, 11, 0.9);
+  color: #14171d;
+  font-size: 16px;
+  font-size: 3.4cqh;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.intro-name {
+  margin: 0;
+  font-size: 30px;
+  font-size: 9cqh;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 0.4cqh 1.6cqh rgba(0, 0, 0, 0.5);
+}
+
+.intro-unit {
+  font-size: 16px;
+  font-size: 3.8cqh;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.82);
+  letter-spacing: 0.04em;
+}
+
+.intro-note {
+  margin: 0;
+  font-size: 14px;
+  font-size: 3.1cqh;
+  line-height: 1.35;
+  color: rgba(226, 232, 240, 0.78);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.intro-card .intro-head {
+  margin-top: 0.6cqh;
+  padding-top: 1.6cqh;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* ═══════════════ 样式二：底部字幕条 ═══════════════ */
+.intro-lower {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 1.6cqw;
+  width: min(84cqw, 1400px);
+  min-width: 280px;
+  padding: 1.8cqh 2.4cqw 1.8cqh 0;
+  background: linear-gradient(90deg, rgba(9, 12, 18, 0.95), rgba(16, 21, 31, 0.88));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 1cqh;
+  overflow: hidden;
+  box-shadow: 0 1cqh 3cqh rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: intro-in-left 0.45s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+}
+
+.intro-lower-accent {
+  flex: 0 0 auto;
+  width: 0.7cqh;
+  height: 9cqh;
+  min-height: 40px;
+  background: linear-gradient(180deg, #fbbf24, #f59e0b);
+  border-radius: 999px;
+}
+
+.intro-lower .intro-photo {
+  width: 9cqh;
+  height: 9cqh;
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 50%;
+  border: 0.4cqh solid rgba(245, 158, 11, 0.65);
+}
+
+.intro-lower .intro-photo--blank {
+  font-size: 16px;
+  font-size: 3.4cqh;
+}
+
+.intro-lower-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6cqh;
+}
+
+.intro-lower-name {
+  font-size: 24px;
+  font-size: 6cqh;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.intro-lower-sub {
+  display: flex;
+  align-items: center;
+  gap: 1cqw;
+  flex-wrap: wrap;
+}
+
+.intro-lower-unit {
+  font-size: 14px;
+  font-size: 3.2cqh;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.intro-lower .intro-chip {
+  font-size: 12px;
+  font-size: 2.6cqh;
+  padding: 0.35cqh 0.8cqw;
+}
+
+.intro-lower-note {
+  flex: 0 1 26cqw;
+  font-size: 13px;
+  font-size: 2.9cqh;
+  line-height: 1.3;
+  color: rgba(226, 232, 240, 0.72);
+  padding-left: 1.4cqw;
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.intro-lower-tail {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4cqh;
+  padding-left: 1.4cqw;
+}
+
+.intro-lower-title {
+  font-size: 11px;
+  font-size: 2.2cqh;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: #f59e0b;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.intro-lower-count {
+  font-size: 13px;
+  font-size: 2.8cqh;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ═══════════════ 样式三：名册 ═══════════════ */
+.intro-roster {
+  position: relative;
+  width: min(88cqw, 1500px);
+  min-width: 280px;
+  padding: 2.6cqh 2.6cqw 2cqh;
+  background: linear-gradient(180deg, rgba(10, 13, 19, 0.94), rgba(17, 22, 32, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 1.2cqh;
+  box-shadow: 0 1.4cqh 4cqh rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: intro-in 0.5s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+}
+
+.intro-roster .intro-head {
+  margin-bottom: 2.2cqh;
+}
+
+.intro-roster-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--intro-per-screen, 3), minmax(0, 1fr));
+  gap: 1.6cqw;
+}
+
+.intro-roster-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 1.2cqw;
+  padding: 1.6cqh 1.4cqw;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1cqh;
+  min-width: 0;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.intro-roster-card.on {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.6);
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25) inset;
+}
+
+.intro-roster .intro-photo {
+  width: 7.4cqh;
+  height: 7.4cqh;
+  min-width: 34px;
+  min-height: 34px;
+  border-radius: 50%;
+}
+
+.intro-roster .intro-photo--blank {
+  font-size: 14px;
+  font-size: 2.8cqh;
+}
+
+.intro-roster-lane {
+  position: absolute;
+  top: -1cqh;
+  left: -0.4cqw;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 0.4cqw;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #14171d;
+  font-size: 11px;
+  font-size: 2.1cqh;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.intro-roster-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4cqh;
+}
+
+.intro-roster-name {
+  font-size: 18px;
+  font-size: 4.4cqh;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.intro-roster-unit {
+  font-size: 12px;
+  font-size: 2.6cqh;
+  color: rgba(255, 255, 255, 0.72);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.intro-roster-meta {
+  display: flex;
+  gap: 0.8cqw;
+  font-size: 11px;
+  font-size: 2.3cqh;
+  color: rgba(203, 213, 225, 0.8);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.intro-dots {
+  display: flex;
+  justify-content: center;
+  gap: 0.6cqw;
+  margin-top: 2cqh;
+}
+
+.intro-dot {
+  width: 6px;
+  width: 1cqh;
+  height: 6px;
+  height: 1cqh;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.intro-dot.on {
+  background: #f59e0b;
+  transform: scale(1.25);
+}
+
+/* ═══════════════ 空名册提示 ═══════════════ */
+.intro-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.2cqh;
+  padding: 2.6cqh 3cqw;
+  background: rgba(10, 13, 19, 0.9);
+  border: 1px dashed rgba(245, 158, 11, 0.5);
+  border-radius: 1cqh;
+}
+
+.intro-empty-tag {
+  font-size: 13px;
+  font-size: 2.6cqh;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: #f59e0b;
+  text-transform: uppercase;
+}
+
+.intro-empty-text {
+  font-size: 14px;
+  font-size: 3cqh;
+  color: rgba(255, 255, 255, 0.66);
+}

@@ -1,8 +1,10 @@
 /**
  * 赛事信息叠加层 — 田径优先（径赛道次 / 田赛尝试 / 成绩榜）
+ * 另含「球队比分条」与「选手介绍」（单人卡 / 字幕条 / 名册）
  * 输出画面与 PROGRAM 监看共用
  */
 import { useEffect, useMemo, useState } from 'react';
+import AthleteIntro from './AthleteIntro';
 
 function formatMs(ms) {
   const total = Math.max(0, Math.floor(ms));
@@ -179,14 +181,26 @@ function TeamBar({ config }) {
 
 function ScoreboardOverlay({ config, className = '' }) {
   if (!config?.enabled) return null;
-  const isTrack = (config.mode || 'track') === 'track';
+  const mode = config.mode || 'track';
+
+  if (mode === 'intro') {
+    if (config.introVisible === false) return null;
+    return (
+      <div
+        className={`scoreboard-overlay scoreboard-intro-wrap ${className}`}
+        aria-label="选手介绍"
+      >
+        <AthleteIntro config={config} />
+      </div>
+    );
+  }
 
   return (
     <div
       className={`scoreboard-overlay scoreboard-${config.position || 'bottom'} ${className}`}
-      aria-label={isTrack ? '田径信息条' : '比分条'}
+      aria-label={mode === 'team' ? '比分条' : '田径信息条'}
     >
-      {isTrack ? <TrackOverlay config={config} /> : <TeamBar config={config} />}
+      {mode === 'team' ? <TeamBar config={config} /> : <TrackOverlay config={config} />}
     </div>
   );
 }

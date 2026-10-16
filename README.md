@@ -30,9 +30,11 @@
 | 音频混音台 | Audio mixer | 独立窗口，VU 表 + 频谱 + 音量推子 + 静音，不额外拉流 |
 | 本地媒体导入 | Local media import | 将本地视频/音频作为虚拟流，与直播流同等操作 |
 | 水印叠加 | Watermark overlay | 文字或图片水印，低透明度叠在输出画面上 |
-| 输出录制 | Output recording | 录制当前输出画面，WebM/MP4 格式，系统对话框保存 |
-| 数字快捷键 | Number key switching | 按 1–9 直接切换输出源 |
-| 设置面板 | Settings panel | 统一的设置弹窗管理 HDMI、水印、调试日志 |
+| 输出录制 | Output recording | 一次录制导出两份成片：无成绩条 / 有成绩条，WebM/MP4 格式 |
+| 导播台数字快捷键 | Director hotkeys | 导播台按 1–9 把该机位切到预览(PVW)，Shift+1–9 直接切主输出(PGM) |
+| 设置面板 | Settings panel | 统一管理 HDMI、水印、调试日志；可拉出为独立窗口，双屏一边调参一边监看 |
+| 节目单预载 | Preloaded program | 一次粘贴整天节目单（项目/轮次/组次/名册），现场按 `下一项` 或 PageDown 一键换项，不用手打名字 |
+| 名册批量导入 | Batch roster import | 秩序册、报名表、Excel 一列直接粘贴导入，自动识别道次/姓名/单位/号码/最好成绩/备注 |
 | 调试日志窗口 | Debug log window | 实时日志查看，支持关键词过滤和文件导出 |
 | 低延迟播放 | Low-latency playback | 禁用 GOP 缓存 + 自动追播，延迟 <1 秒 |
 
@@ -50,9 +52,10 @@
 │  │  1400×880   │  │  全屏无边框   │  │ 720×480 │  │
 │  └─────────────┘  └──────────────┘  └─────────┘  │
 │                                                   │
-│  ┌─────────────────────────────────────────────┐  │
-│  │       日志窗口 Log Window  900×600           │  │
-│  └─────────────────────────────────────────────┘  │
+│  ┌───────────────────────┐ ┌───────────────────┐  │
+│  │  设置窗口 780×920      │ │  日志窗口 900×600  │  │
+│  │  Settings (可拉出)     │ │  Log Window       │  │
+│  └───────────────────────┘ └───────────────────┘  │
 └───────────────────────────────────────────────────┘
            │ IPC / Socket.io
 ┌───────────────────────────────────────────────────┐
@@ -111,7 +114,7 @@ npm run build
 ```
 
 产物在 `dist_electron/`：
-- **Windows**: `RTMP Camera Switcher Setup 1.0.0.exe`（NSIS 安装包）
+- **Windows**: `RTMP Camera Switcher Setup <version>.exe`（NSIS 安装包，当前 1.2.1）
 - **macOS**: `.dmg`
 - **Linux**: `.AppImage`
 
@@ -121,6 +124,19 @@ npm run build
 npm run build:dir
 # dist_electron/win-unpacked/RTMP Camera Switcher.exe
 ```
+
+### 自测回归 · Regression Tests
+
+```bash
+npm run test:roster          # 名册 / 节目单文本解析（纯函数，16 项）
+npm run test:program         # 节目单服务端语义：载入 / 切项 / 快照 / 落盘（18 项）
+npm run test:port            # 端口被占用时的启动提示
+npm run test:program:e2e     # 真机端到端：设置里贴节目单 → 点「下一项」/ PageDown 切项 → 名册批量导入
+npm run test:settings-window # 设置独立窗口（Ctrl+, 拉出、分组、双向同步）
+npm run test:package         # 打包后的成品 exe 冒烟（验证的是装出来的那个包）
+```
+
+说明：`test:program:e2e` / `test:settings-window` 的界面走的是写死的 `localhost:3001`，本机若已运行成品实例（占 3001/1935/8000/5173）会自动跳过并提示；`test:package` 会自动改用备用端口，进入「只读模式」避开正在运行的实例。
 
 ---
 
@@ -140,7 +156,7 @@ The app displays the full push URL in the sidebar automatically.
 
 1. 将第二块显示器接 HDMI / Connect a second display
 2. 启动应用，推流上线后设备出现在左侧列表 / Start the app; streams appear in the sidebar
-3. 点击流列表右侧 📡 按钮，或按数字键，选为主输出 / Click 📡 or press a number key to set as output
+3. 点击流列表右侧 📡 按钮，或按 `Shift+数字`，选为主输出 / Click 📡 or press `Shift+number` to set as output
 4. 在 **HDMI 输出** 面板下拉选中目标显示器，点 ▶ 开启输出 / Select display and click ▶
 5. 输出窗口在目标显示器全屏打开 / Output window opens fullscreen on the target display
 6. 切换主输出后 HDMI 窗口实时跟随，无需额外操作 / Switch source anytime — HDMI follows instantly
@@ -149,8 +165,12 @@ The app displays the full push URL in the sidebar automatically.
 
 | 按键 Key | 动作 Action |
 |---|---|
-| `1` – `9` | 切换第 N 路为输出（同时切换预览）/ Switch stream N as output (also updates preview) |
-| `Shift+1` – `9` | 仅切换预览，不改变输出 / Preview only, output unchanged |
+| `1` – `9` | 导播台：切换第 N 路为预览 PVW（主输出不变）；单屏/网格视图：切第 N 路为输出<br>Director: set stream N as preview only; other views: set as output |
+| `Shift+1` – `9` | 直接切换第 N 路为主输出 PGM，使用当前转场 / Cut stream N straight to PGM with current transition |
+| `Enter` / `Space` | 导播台 TAKE：把当前预览切到主输出 / TAKE: cut preview to program |
+| `T` / `Shift+T` | 田径跑表 开始·暂停 / 清零 / Track clock start-pause / reset |
+| `PageDown` / `PageUp` | 节目单 下一项 / 上一项（名册自动就位）/ Program next / previous entry |
+| `Ctrl+,` | 打开设置独立窗口 / Open the detached settings window |
 | `Ctrl+Shift+A` | 打开音频混音台 / Open audio mixer |
 | `Ctrl+Shift+L` | 开关详细日志 / Toggle verbose logging |
 | `Ctrl+Shift+D` | 打开日志查看窗口 / Open log viewer |
@@ -183,12 +203,84 @@ Imported files are registered as virtual streams — play, select as output, and
 
 ### 录制输出 · Recording
 
+一次录制同时导出两份成片 / One take, two files — 停止后选一次保存目录，两份一起落盘：
+
+| 文件 / File | 内容 / Content |
+|---|---|
+| `<base>_无成绩条.webm` | 输出机位原片（开启调色时为调色成片，与监看一致） |
+| `<base>_有成绩条.webm` | 画面 + 叠加层烧录（田径信息条 / 比分条 / 选手介绍，与 PGM 监看一致） |
+
 1. 先选择一路流作为输出 / Select an output stream first
-2. 侧边栏 **⏺ 录制输出** 面板点 **⏺ 开始录制** / Click **⏺ Start Recording**
-3. 点 **⏹ 停止并保存** 后弹出系统保存对话框 / Click **⏹ Stop & Save** → system save dialog
+2. 侧边栏 **⏺ 录制输出** 面板点 **⏺ 开始录制（同时导出 2 份）** / Click **⏺ Start Recording**
+3. 点 **⏹ 停止并保存** → 选择保存目录 / Click **⏹ Stop & Save** → pick a folder
+
+叠加层是 DOM，录制器抓不到，且媒体元素自身的 `captureStream` 在 Electron/Chromium 下不可靠
+（图片素材的 `<img>` 没有该方法；flv.js 直播的 MSE `<video>` 录出来是空片），
+所以两份成片都走画布合成管线：每帧 `画面 → 调色 → 叠加层`
+（渲染逻辑见 `client/src/utils/scoreboardCanvas.js`、`introCanvas.js`），
+音频从 Web Audio 图（`client/src/audio.js`）分出一路，音量跟随混音台推子 / 静音。
+跑表读数按真实时间逐帧刷新，选手介绍的自动轮播进度也按同样节奏推进。
+双路编码 CPU 占用较高；叠加层未启用（或选手介绍已隐藏）时会提示两份内容相同。
+
+Both files are composited on a canvas — the overlay is DOM that MediaRecorder cannot capture,
+and element-level `captureStream` is unreliable under Electron/Chromium (an `<img>` has no such
+method, and an MSE `<video>` from flv.js records an empty file). Audio is tapped from the Web Audio
+graph, so it follows the mixer's fader / mute. Two parallel encodes cost more CPU.
 
 格式优先 WebM (VP9+Opus)，浏览器不支持时回退到 MP4。  
 Format: WebM (VP9+Opus) preferred, MP4 as fallback.
+
+### 设置 · Settings
+
+所有设置集中在 **⚙️ 设置** 面板，分六组：赛事信息条 / 节目单 / 基础调色 / HDMI 多路输出 / 水印 / 调试日志。
+
+把设置拉出为**独立窗口**（双屏时一边调参、一边在主控窗口监看），三种方式任选：
+
+1. 顶栏 **⧉ 独立窗口** 按钮
+2. 设置弹窗右上角 **⧉ 独立窗口** 按钮
+3. 菜单 **工具 → ⚙️ 设置（独立窗口）**，或按 `Ctrl+,`
+
+All settings live in one panel with six groups. Detach it into its own window so you can tune
+parameters on a second monitor while the main window keeps showing the program feed.
+
+- 独立窗口可自由缩放并拖到任意显示器；再点一次只聚焦已打开的窗口
+- 独立窗口与主界面弹窗状态双向同步（Socket.io 广播服务端权威状态），两边修改互不覆盖
+- 窗口越宽分组越多栏（≥680px 两栏、≥1120px 三栏），分组不跨栏断开
+- 关闭主控窗口时独立设置窗口一并关闭
+
+### 节目单与名册导入 · Program & Roster Import
+
+赛程紧凑时没人有空逐个手打名字：把整天节目单**一次粘贴**进来，现场只按「下一项」。
+
+设置 → **🗂 节目单（一键切项）** 里粘贴如下文本，点「生成节目单」：
+
+```text
+# 10:30 男子100米 预赛 第1组
+3 张三 高一2班 1023 11.20
+4 李四 高一3班 1024 11.35
+# 10:36 男子100米 预赛 第2组
+3 王五 高二1班 1088 10.98
+```
+
+- `#`、`【】`、`====` 开头的行作为**分节标题**，自动拆出时间 / 项目 / 轮次 / 组次，并推断项目类型（径赛/田赛/接力/中长跑）
+- 分节标题可省略（如 `男子100米 预赛 第1组` 直接写一行）；每节内可自带一行表头（道次/姓名/单位/号码/最好成绩）
+- 切项时当前道次名册会**先快照回该节**，现场补录的单位、照片、改名不会丢
+- 侧栏 **田径直播** 面板出现节目单控制条：**◀ 上一项** / **下一项 ▶** / **全部 ▾**（点任意一节直接跳转）
+- 快捷键 `PageDown` 下一项、`PageUp` 上一项（输入框获焦时不触发）
+- 换项一次性生效：项目名、类别、轮次、组次、风速、名册全部就位，名次成绩清空、跑表归零
+
+名册也可以单独批量导入：设置 → 赛事信息条 → 选手介绍 → **📋 批量导入名册**。
+
+```text
+5 钱九 高二4班 1099 11.02      ← 道次 姓名 单位 号码 最好成绩
+6 周十 高二5班 1100 11.12
+王七 高三1班                    ← 不写道次时按顺序落道
+```
+
+- 支持 Excel 直接粘贴（Tab 分隔）与逗号、顿号、空格、全角逗号分隔
+- 带表头（道次/姓名/单位/号码/最好成绩/备注）时按列名对齐，列序随意
+- 道次按行号落位，跳号自动留空行；**覆盖**整份名册或**填空道次**（只补空位，不动已录入的）
+- 也可从 `.txt` / `.csv` 文件导入；导入前有识别预览与未识别行提示
 
 ### 水印 · Watermark
 

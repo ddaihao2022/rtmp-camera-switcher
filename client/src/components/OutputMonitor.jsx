@@ -3,6 +3,8 @@ import { io } from 'socket.io-client';
 import flvjs from 'flv.js';
 import { buildFlvUrl, getUnsupportedCodecMessage, isBrowserPlayableStream } from '../utils/stream';
 import { FLV_PREVIEW_OPTIONS, startCatchUp, tryPlay } from '../utils/lowLatency';
+import { buildFilter } from '../utils/color';
+import GradeVeil from './GradeVeil';
 import ScoreboardOverlay from './ScoreboardOverlay';
 
 const FLV_HOST = 'http://localhost:8000';
@@ -14,8 +16,13 @@ const FLV_HOST = 'http://localhost:8000';
  * Props:
  * - streamKey: 当前选为输出的流 key (null 时不渲染)
  * - streams:   活跃流列表,用于拿对应的 flvPath
+ * - grade:     该路生效的调色参数（与 HDMI 输出保持一致）
  */
-function OutputMonitor({ streamKey, streams }) {
+function OutputMonitor({ streamKey, streams, grade = null }) {
+  const gradeStyle = (() => {
+    const f = buildFilter(grade);
+    return f ? { filter: f } : undefined;
+  })();
   const videoRef = useRef(null);
   const playerRef = useRef(null);
   const [collapsed, setCollapsed] = useState(false);
@@ -133,7 +140,9 @@ function OutputMonitor({ streamKey, streams }) {
             autoPlay
             muted
             playsInline
+            style={gradeStyle}
           />
+          <GradeVeil grade={grade} />
           {fx && (
             <div
               className={`pgm-fx pgm-fx-${fx.type} pgm-fx-dir-${fx.direction || 'left'}`}

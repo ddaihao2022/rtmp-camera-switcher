@@ -4,6 +4,8 @@ import './OutputView.css';
 import './components/ScoreboardOverlay.css';
 import ScoreboardOverlay from './components/ScoreboardOverlay';
 import MediaLayer from './components/MediaLayer';
+import GradeVeil from './components/GradeVeil';
+import { normalizeGrade, resolveGrade } from './utils/color';
 
 const API_HOST = 'http://localhost:3001';
 
@@ -67,6 +69,7 @@ function OutputView() {
   const [error, setError] = useState(null);
   const [watermark, setWatermark] = useState(null);
   const [scoreboard, setScoreboard] = useState(null);
+  const [colorGrade, setColorGrade] = useState(null);
   const fxTimer = useRef(null);
   const lastTransitionAt = useRef(0);
   const inTransition = useRef(false);
@@ -123,12 +126,14 @@ function OutputView() {
     });
     socket.on('watermark:update', setWatermark);
     socket.on('scoreboard:update', setScoreboard);
+    socket.on('color:update', setColorGrade);
     return () => socket.disconnect();
   }, [pinnedSource, beginTransition]);
 
   useEffect(() => {
     fetch(`${API_HOST}/api/watermark`).then(r => r.json()).then(setWatermark).catch(() => {});
     fetch(`${API_HOST}/api/scoreboard`).then(r => r.json()).then(setScoreboard).catch(() => {});
+    fetch(`${API_HOST}/api/color`).then(r => r.json()).then(d => setColorGrade(normalizeGrade(d))).catch(() => {});
   }, []);
 
   // 转场结束后强制回到单层（防 timer 丢失）
@@ -142,6 +147,10 @@ function OutputView() {
   const isLive = streamKey && streams.some(s => s.streamKey === streamKey);
   const localItem = streams.find(s => s.streamKey === streamKey && s.type === 'local');
   const showOutgoing = !!fx && !!outgoingKey && outgoingKey !== streamKey;
+
+  // 调色：机位覆盖优先，否则全局；转场期间新旧两层各自取自己的参数
+  const currentGrade = resolveGrade(colorGrade, streamKey);
+  const outgoingGrade = resolveGrade(colorGrade, outgoingKey);
 
   const fxClass = fx
     ? `fx fx-${fx.type}${fx.type === 'wipe' || fx.type === 'slide' ? ` fx-dir-${fx.direction}` : ''}`
@@ -157,12 +166,14 @@ function OutputView() {
         <div className="output-stage">
           {showOutgoing && (
             <div className="media-layer layer-outgoing" key={`out-${outgoingKey}-${fx?.id}`}>
-              <MediaLayer streamKey={outgoingKey} streams={streams} onError={() => {}} />
+              <MediaLayer streamKey={outgoingKey} streams={streams} grade={outgoingGrade} onError={() => {}} />
+              <GradeVeil grade={outgoingGrade} />
             </div>
           )}
           <div className={`media-layer layer-current ${showOutgoing ? 'layer-animating' : ''}`}
             key={`cur-${streamKey}-${fx?.id || 'idle'}`}>
-            <MediaLayer streamKey={streamKey} streams={streams} onError={handleError} />
+            <MediaLayer streamKey={streamKey} streams={streams} grade={currentGrade} onError={handleError} />
+            <GradeVeil grade={currentGrade} />
           </div>
           {(fx?.type === 'dip' || fx?.type === 'mix') && showOutgoing && (
             <div className="fx-veil" aria-hidden="true" />

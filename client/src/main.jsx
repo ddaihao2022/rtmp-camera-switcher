@@ -3,13 +3,15 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import OutputView from './OutputView';
 import AudioView from './AudioView';
+import SettingsView from './SettingsView';
 import './index.css';
 
 const params = new URLSearchParams(window.location.search);
 const view = params.get('view');
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  view === 'output' ? <OutputView /> :
-  view === 'audio'  ? <AudioView /> :
+  view === 'output'   ? <OutputView /> :
+  view === 'audio'    ? <AudioView /> :
+  view === 'settings' ? <SettingsView /> :
   <App />
 );

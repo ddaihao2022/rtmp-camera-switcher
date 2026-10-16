@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>计时录入 · 田径成绩</title>
+<style>
+  :root{
+    --bg:#f4f6fb; --card:#ffffff; --ink:#0f172a; --muted:#64748b;
+    --line:#e2e8f0; --brand:#2563eb; --ok:#16a34a; --warn:#f59e0b; --bad:#dc2626;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg);color:var(--ink);
+    font:16px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    padding-bottom:calc(78px + env(safe-area-inset-bottom));
+    overscroll-behavior:none;
+  }
+  header{position:sticky;top:0;z-index:20;background:#0f172a;color:#fff;padding:10px 12px 8px}
+  .row{display:flex;align-items:center;gap:8px}
+  .brand{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#94a3b8;flex:none}
+  .dot.on{background:#22c55e;box-shadow:0 0 0 4px rgba(34,197,94,.18)}
+  .dot.off{background:#ef4444}
+  .spacer{flex:1}
+  .chip{background:rgba(255,255,255,.14);color:#fff;border:0;border-radius:999px;
+        padding:6px 12px;font-size:13px;font-weight:600}
+  .chip:active{background:rgba(255,255,255,.28)}
+  .event{margin-top:8px;font-size:15px;font-weight:600;letter-spacing:.2px}
+  .event small{display:block;font-weight:400;color:#cbd5e1;font-size:12px;margin-top:2px}
+
+  /* 跑表条 */
+  #sw{background:#111c33;color:#fff;margin:8px;border-radius:var(--radius);padding:10px 12px;
+      display:flex;align-items:center;gap:10px;box-shadow:0 6px 18px rgba(15,23,42,.12)}
+  #swTime{font:700 32px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+          font-variant-numeric:tabular-nums;letter-spacing:1px;flex:1}
+  #swTime.live{color:#4ade80}
+  .swcol{display:flex;flex-direction:column;gap:6px}
+  .btn{border:0;border-radius:10px;padding:10px 14px;font-size:15px;font-weight:700;background:#e2e8f0;color:#0f172a}
+  .btn.primary{background:var(--brand);color:#fff}
+  .btn.ghost{background:rgba(255,255,255,.16);color:#fff}
+  .btn.small{padding:7px 10px;font-size:13px}
+  .btn:active{transform:scale(.97)}
+  .src{font-size:12px;color:#94a3b8}
+
+  /* 道次 */
+  .lanes{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 8px 8px}
+  @media (min-width:640px){.lanes{grid-template-columns:repeat(3,1fr)}}
+  @media (min-width:900px){.lanes{grid-template-columns:repeat(4,1fr)}}
+  .lane{background:var(--card);border:2px solid var(--line);border-radius:var(--radius);
+        padding:12px;min-height:104px;display:flex;flex-direction:column;justify-content:space-between;
+        transition:border-color .12s,background .12s}
+  .lane:active{background:#eff6ff}
+  .lane.done{border-color:#86efac;background:#f0fdf4}
+  .lane.empty .lane-time{color:#94a3b8;font-weight:600}
+  .lane-head{display:flex;align-items:baseline;gap:6px}
+  .lane-no{font:800 20px/1 ui-monospace,monospace}
+  .lane-name{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lane-time{font:800 26px/1.1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+             font-variant-numeric:tabular-nums;margin-top:8px}
+  .lane-time small{font-size:12px;font-weight:600;color:var(--muted);margin-left:4px}
+  .lane-foot{display:flex;justify-content:space-between;align-items:center;margin-top:6px;
+             font-size:12px;color:var(--muted)}
+  .pill{padding:2px 7px;border-radius:999px;background:#f1f5f9;font-weight:700}
+  .pill.ok{background:#dcfce7;color:#15803d}
+  .pill.warn{background:#fef3c7;color:#b45309}
+
+  footer{position:fixed;left:0;right:0;bottom:0;z-index:20;background:#fff;border-top:1px solid var(--line);
+         padding:10px 12px calc(10px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:10px;
+         font-size:13px;color:var(--muted)}
+  footer .grow{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* 遮罩与面板 */
+  .mask{position:fixed;inset:0;z-index:40;background:rgba(15,23,42,.5);display:flex;align-items:flex-end}
+  .mask.center{align-items:center;justify-content:center}
+  .panel{background:#fff;width:100%;border-radius:18px 18px 0 0;padding:16px;max-height:88vh;overflow:auto}
+  .mask.center .panel{max-width:420px;border-radius:18px;margin:12px}
+  .panel h3{margin:0 0 10px;font-size:17px}
+  .panel .sub{color:var(--muted);font-size:13px;margin-bottom:12px}
+  .hidden{display:none!important}
+  .field{display:flex;align-items:center;gap:8px;margin:8px 0}
+  .field input[type=text]{flex:1;border:1.5px solid var(--line);border-radius:10px;padding:12px;
+        font:700 20px/1 ui-monospace,monospace;text-align:center}
+  .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+  .keypad button{border:0;background:#f1f5f9;border-radius:12px;padding:16px 0;font:700 22px/1 ui-monospace,monospace}
+  .keypad button.wide{grid-column:span 2}
+  .keypad button.go{background:var(--brand);color:#fff}
+  .keypad button.del{background:#fee2e2;color:#b91c1c}
+  .judgeitem{display:flex;align-items:center;gap:10px;padding:14px 12px;border:1.5px solid var(--line);
+             border-radius:12px;margin-bottom:8px;font-weight:700}
+  .judgeitem:active{border-color:var(--brand)}
+  .judgeitem small{font-weight:400;color:var(--muted)}
+  .kv{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:var(--muted);margin:4px 0}
+  .kv b{color:var(--ink);font-weight:700}
+
+  #toast{position:fixed;left:50%;top:74px;transform:translateX(-50%);z-index:60;
+         background:#0f172a;color:#fff;padding:10px 16px;border-radius:999px;font-size:14px;
+         opacity:0;pointer-events:none;transition:opacity .18s;max-width:90vw;text-align:center}
+  #toast.show{opacity:1}
+  #toast.err{background:var(--bad)}
+  #toast.ok{background:var(--ok)}
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <div class="brand"><span class="dot" id="conn"></span>成绩录入</div>
+    <div class="spacer"></div>
+    <button class="chip" id="judgeBtn">选择姓名</button>
+  </div>
+  <div class="event" id="eventLine">连接中…<small id="eventMeta"></small></div>
+</header>
+
+<div id="sw">
+  <div id="swTime">0.00</div>
+  <div class="swcol">
+    <button class="btn primary" id="swBtn">▶ 发令</button>
+    <button class="btn ghost small" id="swReset">清零</button>
+  </div>
+</div>
+<div style="padding:0 12px 6px;font-size:12px;color:#64748b" id="srcLine">—</div>
+
+<main class="lanes" id="lanes"></main>
+
+<footer>
+  <span class="grow" id="progress">—</span>
+  <span id="pending" class="pill hidden">待补传 0</span>
+  <button class="btn small" id="refreshBtn">刷新</button>
+</footer>
+
+<div class="mask center hidden" id="judgeMask">
+  <div class="panel">
+    <h3>我是谁？</h3>
+    <div class="sub">选择你的计时席位，之后自动记住。选错可在页面上方随时更换。</div>
+    <div id="judgeList"></div>
+  </div>
+</div>
+
+<div class="mask hidden" id="laneMask">
+  <div class="panel">
+    <h3 id="laneTitle">第 1 道</h3>
+    <div class="sub" id="laneSub"></div>
+    <div id="laneOthers"></div>
+    <div class="field">
+      <input type="text" id="laneInput" inputmode="decimal" placeholder="12.34 或 1:02.34">
+      <button class="btn primary" id="laneSave">提交</button>
+    </div>
+    <div class="keypad" id="keypad"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" id="laneCapture">用跑表读数</button>
+      <button class="btn" id="laneClear" style="color:#b91c1c">清除本道</button>
+      <div class="spacer"></div>
+      <button class="btn" id="laneClose">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(function () {
+  'use strict';
+  const API = location.origin;
+  const LS_JUDGE = 'rtmp.timing.judge';
+  const LS_QUEUE = 'rtmp.timing.queue';
+
+  const $ = (id) => document.getElementById(id);
+  const state = {
+    cfg: null,          // scoreboard 配置（项目、道次姓名、系统跑表）
+    timing: null,       // timing 模块状态
+    me: localStorage.getItem(LS_JUDGE) || '',
+    skewMs: 0,          // 设备时钟与服务器的偏差
+    swRunning: false,
+    swStart: 0,         // performance.now() 起点
+    swBase: 0,
+    lane: null,         // 当前面板打开的道次
+    queue: JSON.parse(localStorage.getItem(LS_QUEUE) || '[]'),
+  };
+
+  // ── 工具 ────────────────────────────────────────────────────────────────
+  const pad = (n, w = 2) => String(n).padStart(w, '0');
+  function fmt(ms, decimals = 2) {
+    if (ms == null || !isFinite(ms)) return '';
+    const unit = Math.pow(10, 3 - decimals);
+    const t = Math.max(0, Math.round(ms / unit) * unit);
+    const h = Math.floor(t / 3600000), m = Math.floor((t % 3600000) / 60000),
+          s = Math.floor((t % 60000) / 1000), f = pad(Math.round((t % 1000) / unit), decimals);
+    if (h) return h + ':' + pad(m) + ':' + pad(s) + '.' + f;
+    if (m) return m + ':' + pad(s) + '.' + f;
+    return s + '.' + f;
+  }
+  function parse(text) {
+    if (text == null) return null;
+    let s = String(text).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+      .replace(/[：]/g, ':').replace(/[．。，,]/g, '.').replace(/\s+/g, '');
+    if (!s) return null;
+    let m = /^(\d+(?:\.\d+)?)分(?:(\d+(?:\.\d+)?)秒?)?$/.exec(s);
+    if (m) return Math.round((Number(m[1]) * 60 + (m[2] ? Number(m[2]) : 0)) * 1000);
+    m = /^(\d+)秒(?:(\d{1,3}))?$/.exec(s);
+    if (m) return Math.round((Number(m[1]) + (m[2] ? Number(m[2].padEnd(2, '0').slice(0, 2)) / 100 : 0)) * 1000);
+    const parts = s.split(':');
+    if (parts.length > 3 || parts.some(p => p === '' || !/^\d+(\.\d+)?$/.test(p))) return null;
+    const n = parts.map(Number);
+    const sec = n.length === 1 ? n[0] : n.length === 2 ? n[0] * 60 + n[1] : n[0] * 3600 + n[1] * 60 + n[2];
+    return Math.round(sec * 1000);
+  }
+  function toast(msg, kind) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.className = 'show ' + (kind || '');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { el.className = ''; }, 1800);
+  }
+  const vib = (n) => { try { navigator.vibrate && navigator.vibrate(n || 12); } catch (e) {} };
+  function saveQueue() { localStorage.setItem(LS_QUEUE, JSON.stringify(state.queue)); paintPending(); }
+  function paintPending() {
+    const el = $('pending');
+    if (state.queue.length) { el.classList.remove('hidden'); el.textContent = '待补传 ' + state.queue.length; }
+    else el.classList.add('hidden');
+  }
+
+  // ── 提交（离线自动排队补传） ─────────────────────────────────────────────
+  async function postEntry(payload) {
+    try {
+      const r = await fetch(API + '/api/timing/entry', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      });
+      const d = await r.json();
+      if (!r.ok || d.ok === false) throw new Error(d.error || '提交失败');
+      return d;
+    } catch (e) {
+      state.queue.push({ ...payload, __q: Date.now() });
+      saveQueue();
+      throw e;
+    }
+  }
+  async function flushQueue() {
+    if (!state.queue.length) return;
+    const left = [];
+    for (const item of state.queue) {
+      try {
+        const { __q, ...payload } = item;
+        const r = await fetch(API + '/api/timing/entry', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        });
+        if (!r.ok) left.push(item);
+      } catch (e) { left.push(item); }
+    }
+    state.queue = left;
+    saveQueue();
+    if (!left.length) toast('补传完成', 'ok');
+  }
+
+  // ── 系统跑表 / 本地跑表 ──────────────────────────────────────────────────
+  function systemMs() {
+    const c = state.cfg;
+    if (!c || !c.clockRunning || !c.clockStartAt) return null;
+    return (Number(c.clockOffsetMs) || 0) + (Date.now() + state.skewMs - Number(c.clockStartAt));
+  }
+  function currentMs() {
+    const sys = systemMs();
+    if (sys != null) return sys;
+    if (state.swRunning) return state.swBase + (performance.now() - state.swStart);
+    return state.swBase;
+  }
+  function tick() {
+    const sys = systemMs();
+    const ms = sys != null ? sys : (state.swRunning ? state.swBase + (performance.now() - state.swStart) : state.swBase);
+    $('swTime').textContent = fmt(ms, ms >= 60000 ? 2 : 2);
+    $('swTime').className = (sys != null || state.swRunning) ? 'live' : '';
+    $('swBtn').textContent = state.swRunning ? '⏸ 停止' : '▶ 发令';
+    const src = sys != null ? '跟随主控台跑表（自动校时 ' + Math.round(state.skewMs) + 'ms）'
+      : state.swRunning ? '本机跑表计时中：按道次按钮抓取成绩'
+      : '本机跑表未启动：可直接手输成绩，或点“发令”开始计时';
+    $('srcLine').textContent = src;
+    requestAnimationFrame(() => setTimeout(tick, 60));
+  }
+  function toggleSw() {
+    if (state.swRunning) {
+      state.swBase = state.swBase + (performance.now() - state.swStart);
+      state.swRunning = false;
+      vib(20);
+    } else {
+      state.swStart = performance.now();
+      state.swRunning = true;
+      vib(30);
+    }
+  }
+
+  // ── 渲染 ────────────────────────────────────────────────────────────────
+  function judges() { return (state.timing && state.timing.judges) || []; }
+  function meName() {
+    const j = judges().find(x => x.id === state.me);
+    return j ? j.name : '';
+  }
+  function laneData(lane) {
+    return (state.timing && state.timing.lanes && state.timing.lanes[String(lane)]) || null;
+  }
+  function myValue(lane) {
+    const l = laneData(lane);
+    return l ? l.values.find(v => v.judgeId === state.me) : null;
+  }
+  function laneCount() {
+    const athletes = (state.cfg && state.cfg.athletes) || [];
+    return athletes.length || (state.timing && state.timing.event.lanes) || 8;
+  }
+
+  function renderHeader() {
+    const c = state.cfg || {};
+    const t = (state.timing && state.timing.event) || {};
+    const name = [c.category || t.category || '', String(c.eventName || t.eventName || '').replace(/^(男子|女子)/, '')].join('');
+    $('eventLine').firstChild.nodeValue = name || '等待主控台设置项目';
+    $('eventMeta').textContent = [c.round || t.round, c.heat || t.heat, c.wind ? '风速 ' + c.wind : '']
+      .filter(Boolean).join(' · ') || '';
+    $('judgeBtn').textContent = meName() || '选择姓名';
+  }
+
+  function renderLanes() {
+    const box = $('lanes');
+    const n = laneCount();
+    const athletes = (state.cfg && state.cfg.athletes) || [];
+    const hideOthers = !state.timing || state.timing.ui.hideOthersOnEntry !== false;
+    let html = '';
+    for (let lane = 1; lane <= n; lane++) {
+      const a = athletes.find(x => Number(x.lane) === lane) || athletes[lane - 1] || {};
+      const l = laneData(lane);
+      const mine = myValue(lane);
+      const done = !!mine;
+      const head = (state.timing && state.timing.stats && state.timing.stats.completed) ? '' : '';
+      html += '<div class="lane ' + (done ? 'done' : 'empty') + '" data-lane="' + lane + '">'
+        + '<div class="lane-head"><span class="lane-no">' + lane + '</span>'
+        + '<span class="lane-name">' + escapeHtml(a.name || '') + '</span></div>'
+        + '<div class="lane-time">' + (mine ? fmt(mine.ms) + '<small>秒</small>' : '— —<small>点此录入</small>') + '</div>'
+        + '<div class="lane-foot">'
+        + '<span>已录 ' + ((l && l.count) || 0) + '/' + ((state.timing && state.timing.stats.judgeCount) || 0) + ' 人</span>'
+        + (l && l.avg != null && !hideOthers
+            ? '<span class="pill ' + (l.warned ? 'warn' : '') + '">均 ' + l.avgText + '</span>'
+            : (l && l.avg != null ? '<span class="pill ok">已出平均</span>' : ''))
+        + '</div></div>';
+    }
+    box.innerHTML = html;
+    Array.from(box.children).forEach(el => el.addEventListener('click', () => openLane(Number(el.dataset.lane))));
+  }
+
+  function renderProgress() {
+    const n = laneCount();
+    let mine = 0;
+    for (let lane = 1; lane <= n; lane++) if (myValue(lane)) mine++;
+    const st = (state.timing && state.timing.stats) || {};
+    $('progress').textContent = meName()
+      ? '我 ' + mine + '/' + n + ' 道 · 全场已录 ' + (st.submittedLanes || 0) + '/' + n
+        + ' 道 · 裁判 ' + (st.judgeCount || 0) + ' 人'
+      : '请先选择姓名';
+    renderHeader();
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // ── 道次面板 ────────────────────────────────────────────────────────────
+  function openLane(lane) {
+    if (!state.me) { toast('请先选择你的姓名'); openJudges(true); return; }
+    state.lane = lane;
+    const l = laneData(lane);
+    const mine = myValue(lane);
+    const athletes = (state.cfg && state.cfg.athletes) || [];
+    const a = athletes.find(x => Number(x.lane) === lane) || {};
+    $('laneTitle').textContent = '第 ' + lane + ' 道' + (a.name ? ' · ' + a.name : '');
+    const hideOthers = !state.timing || state.timing.ui.hideOthersOnEntry !== false;
+    const others = (l ? l.values.filter(v => v.judgeId !== state.me) : []);
+    $('laneSub').textContent = mine ? '我已录入 ' + fmt(mine.ms) + ' 秒，重新提交将覆盖。'
+      : '手输或用跑表读数，提交后立即回传主系统。';
+    $('laneOthers').innerHTML = hideOthers
+      ? '<div class="kv"><span>其他老师已录</span><b>' + others.length + ' 人（现场不显示他人读数，避免互相影响）</b></div>'
+      : others.map(v => '<div class="kv"><span>' + escapeHtml(v.judge) + '</span><b>' + v.text + (v.dropped ? '（去极值）' : '') + '</b></div>').join('')
+        || '<div class="kv"><span>其他老师</span><b>暂无</b></div>';
+    if (l && l.avg != null && state.timing.trim && state.timing.trim.enabled !== false) {
+      $('laneOthers').innerHTML += '<div class="kv"><span>去极值平均</span><b>' + l.avgText + ' 秒'
+        + (l.dropped.length ? '（去掉 ' + l.dropped.join('、') + '）' : '（人数不足，未去极值）') + '</b></div>';
+    }
+    $('laneInput').value = mine ? fmt(mine.ms) : '';
+    $('laneMask').classList.remove('hidden');
+  }
+  function closeLane() { $('laneMask').classList.add('hidden'); state.lane = null; }
+
+  async function submitLane(ms) {
+    const lane = state.lane;
+    if (!lane) return;
+    try {
+      const d = await postEntry({ judge: state.me, lane, time: ms, src: state.swRunning || systemMs() != null ? 'stopwatch' : 'manual' });
+      toast('第 ' + lane + ' 道 ' + fmt(d.ms) + ' 秒 已提交', 'ok');
+      vib(18);
+      closeLane();
+    } catch (e) {
+      toast('已暂存本地，联网后自动补传', 'err');
+      closeLane();
+    }
+  }
+
+  function keypadInit() {
+    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', ':'];
+    const box = $('keypad');
+    box.innerHTML = keys.map(k => '<button data-k="' + k + '">' + k + '</button>').join('')
+      + '<button class="del" data-k="del">⌫</button>'
+      + '<button class="wide go" id="kpGo">提交成绩</button>';
+    box.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      const k = b.dataset.k;
+      const inp = $('laneInput');
+      if (k === 'del') inp.value = inp.value.slice(0, -1);
+      else if (k) inp.value += k;
+      else if (b.id === 'kpGo') doSave();
+    });
+  }
+  function doSave() {
+    const ms = parse($('laneInput').value);
+    if (ms == null) { toast('时间格式无法识别，例 12.34 / 1:02.34', 'err'); return; }
+    submitLane(ms);
+  }
+
+  // ── 裁判选择 ────────────────────────────────────────────────────────────
+  function openJudges(force) {
+    const list = $('judgeList');
+    const js = judges().filter(j => j.active !== false);
+    list.innerHTML = js.map(j => '<div class="judgeitem" data-id="' + j.id + '">' + escapeHtml(j.name)
+      + '<small>' + (j.id === state.me ? '（当前）' : '') + '</small></div>').join('')
+      || '<div class="sub">主控台还没有配置计时裁判，请联系裁判长在监控页添加。</div>';
+    $('judgeMask').classList.remove('hidden');
+    if (!js.length && !force) $('judgeMask').classList.add('hidden');
+  }
+
+  // ── 数据同步 ────────────────────────────────────────────────────────────
+  async function loadScoreboard() {
+    try {
+      const r = await fetch(API + '/api/scoreboard', { cache: 'no-store' });
+      const serverDate = r.headers.get('date');
+      if (serverDate) state.skewMs = new Date(serverDate).getTime() - Date.now();
+      state.cfg = await r.json();
+    } catch (e) { /* 离线 */ }
+  }
+  async function loadTiming() {
+    try {
+      const r = await fetch(API + '/api/timing', { cache: 'no-store' });
+      state.timing = await r.json();
+      if (!state.me && judges().length) {
+        $('eventLine').firstChild.nodeValue = '请选择你的姓名';
+      }
+      renderAll();
+      if (!state.me && judges().length) openJudges(true);
+    } catch (e) { /* 离线 */ }
+  }
+  function renderAll() { renderHeader(); renderLanes(); renderProgress(); }
+
+  // ── 事件绑定 ────────────────────────────────────────────────────────────
+  $('swBtn').addEventListener('click', toggleSw);
+  $('swReset').addEventListener('click', () => {
+    state.swRunning = false; state.swBase = 0; state.swStart = 0; toast('跑表已清零');
+  });
+  $('judgeBtn').addEventListener('click', () => openJudges(true));
+  $('judgeList').addEventListener('click', (e) => {
+    const it = e.target.closest('.judgeitem');
+    if (!it) return;
+    state.me = it.dataset.id;
+    localStorage.setItem(LS_JUDGE, state.me);
+    $('judgeMask').classList.add('hidden');
+    toast('当前：' + meName(), 'ok');
+    renderAll();
+  });
+  $('laneSave').addEventListener('click', doSave);
+  $('laneInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSave(); });
+  $('laneCapture').addEventListener('click', () => {
+    const ms = currentMs();
+    if (!ms || ms < 1000) { toast('跑表还没开始', 'err'); return; }
+    $('laneInput').value = fmt(ms);
+    toast('已抓取 ' + fmt(ms) + ' 秒', 'ok');
+  });
+  $('laneClear').addEventListener('click', async () => {
+    const lane = state.lane;
+    if (!lane) return;
+    try {
+      await fetch(API + '/api/timing/entry/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ judge: state.me, lane }),
+      });
+      toast('已清除第 ' + lane + ' 道', 'ok');
+      closeLane();
+    } catch (e) { toast('清除失败，检查网络', 'err'); }
+  });
+  $('laneClose').addEventListener('click', closeLane);
+  $('refreshBtn').addEventListener('click', () => { loadScoreboard().then(loadTiming); flushQueue(); toast('已刷新'); });
+  $('laneMask').addEventListener('click', (e) => { if (e.target.id === 'laneMask') closeLane(); });
+
+  // ── Socket 实时同步 ─────────────────────────────────────────────────────
+  let socket = null;
+  function connect() {
+    if (typeof io !== 'function') return;
+    socket = io(API, { transports: ['websocket', 'polling'] });
+    socket.on('connect', () => { $('conn').className = 'dot on'; });
+    socket.on('disconnect', () => { $('conn').className = 'dot off'; });
+    socket.on('connect_error', () => { $('conn').className = 'dot off'; });
+    socket.on('timing:update', (d) => { state.timing = d; renderAll(); });
+    socket.on('scoreboard:update', (d) => { state.cfg = d; renderAll(); });
+    socket.on('timing:gun', () => {
+      // 主控台发令：本机跑表自动开始，与官方时间对齐
+      state.swBase = 0; state.swStart = performance.now(); state.swRunning = true;
+      toast('发令！跑表已启动', 'ok'); vib(40);
+    });
+  }
+
+  // ── 启动 ────────────────────────────────────────────────────────────────
+  keypadInit();
+  paintPending();
+  tick();
+  connect();
+  loadScoreboard().then(loadTiming).then(() => { if (!state.me) openJudges(false); });
+  setInterval(() => { loadScoreboard(); }, 5000);   // 系统跑表跟随
+  setInterval(flushQueue, 8000);
+  setInterval(() => { if (!socket || !socket.connected) loadTiming(); }, 6000);
+  window.addEventListener('online', flushQueue);
+})();
+</script>
+</body>
+</html>

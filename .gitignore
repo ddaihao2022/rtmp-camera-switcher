@@ -4,11 +4,15 @@ client/dist/
 dist_electron/
 media/
 data/scoreboard.json
+data/color.json
+data/timing.json
 *.log
 *.err
 .DS_Store
 .env
 server-smoke.pid
+# 端到端验证产物（截图等）
+tests/artifacts/
 # Office 临时锁文件
 ~$*.docx
 ~$*.doc
@@ -16,3 +20,18 @@ server-smoke.pid
 ~$*.xlsx
 ~$*.ppt
 ~$*.pptx
+# 各分支安装包：作为 GitHub Release 附件分发，不入库
+安装包/
+# 手机推流端 APK（构建产物，随 Release 分发）
+*.apk
+# Android 构建产物与本地配置
+android/build/
+android/app/build/
+android/.gradle/
+android/tools/*/build/
+android/tools/*/.gradle/
+android/local.properties
+android/replay_pid*.log
+# 本地工具运行时状态
+.mimosa/
+.workbuddy/

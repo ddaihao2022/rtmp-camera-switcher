@@ -88,6 +88,7 @@ const PROD_INDEX = path.join(__dirname, '..', 'client', 'dist', 'index.html');
 
 let controlWin = null;
 let audioWin = null;
+let settingsWin = null;   // 独立设置窗口
 // 多路 HDMI 输出：Map<displayId, { win, mode, source }>
 const outputWins = new Map();
 let outputMode = null; // 兼容旧状态（任意一路的 mode）
@@ -110,6 +111,58 @@ function openAudioWindow() {
   });
   loadView(audioWin, 'audio');
   audioWin.on('closed', () => { audioWin = null; });
+}
+
+function isSettingsOpen() {
+  return !!(settingsWin && !settingsWin.isDestroyed());
+}
+
+function notifySettingsChanged() {
+  if (controlWin && !controlWin.isDestroyed()) {
+    controlWin.webContents.send('settings:changed', { open: isSettingsOpen() });
+  }
+}
+
+/** 打开（或聚焦）独立设置窗口：可拖到第二块屏幕，主窗口继续看画面 */
+function openSettingsWindow() {
+  if (isSettingsOpen()) {
+    if (settingsWin.isMinimized()) settingsWin.restore();
+    settingsWin.show();
+    settingsWin.focus();
+    return settingsWin;
+  }
+
+  settingsWin = new BrowserWindow({
+    width: 780,
+    height: 920,
+    minWidth: 420,
+    minHeight: 520,
+    title: '设置',
+    backgroundColor: '#0f0f0f',
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  loadView(settingsWin, 'settings');
+  settingsWin.once('ready-to-show', () => {
+    if (settingsWin && !settingsWin.isDestroyed()) settingsWin.show();
+  });
+  settingsWin.on('closed', () => {
+    settingsWin = null;
+    notifySettingsChanged();
+  });
+
+  notifySettingsChanged();
+  return settingsWin;
+}
+
+function closeSettingsWindow() {
+  if (isSettingsOpen()) settingsWin.close();
 }
 
 function loadView(win, view, extraQuery = {}) {
@@ -167,6 +220,7 @@ function createControlWindow() {
   controlWin.on('closed', () => {
     controlWin = null;
     closeAllOutputWindows();
+    closeSettingsWindow();
   });
 }
 
@@ -175,6 +229,12 @@ function buildMenu() {
     {
       label: '工具',
       submenu: [
+        {
+          label: '⚙️ 设置（独立窗口）',
+          accelerator: 'CmdOrCtrl+,',
+          click: () => openSettingsWindow()
+        },
+        { type: 'separator' },
         {
           label: '🎚 音频混音台',
           accelerator: 'CmdOrCtrl+Shift+A',
@@ -411,6 +471,29 @@ ipcMain.handle('log:toggle', async (_e, verbose) => {
 
 ipcMain.handle('audio:open', () => { openAudioWindow(); return { success: true }; });
 
+// 独立设置窗口
+ipcMain.handle('settings:open', () => {
+  openSettingsWindow();
+  return { open: true };
+});
+
+ipcMain.handle('settings:close', () => {
+  closeSettingsWindow();
+  return { open: false };
+});
+
+ipcMain.handle('settings:status', () => ({ open: isSettingsOpen() }));
+
+// 把独立窗口收回主界面弹窗
+ipcMain.handle('settings:restore', () => {
+  closeSettingsWindow();
+  if (controlWin && !controlWin.isDestroyed()) {
+    controlWin.webContents.send('settings:restore');
+    controlWin.focus();
+  }
+  return { open: false, restored: true };
+});
+
 // 录制文件保存
 ipcMain.handle('record:save', async (_e, { buffer, ext }) => {
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -423,6 +506,36 @@ ipcMain.handle('record:save', async (_e, { buffer, ext }) => {
   fs.writeFileSync(result.filePath, Buffer.from(buffer));
   shell.showItemInFolder(result.filePath);
   return { success: true, filePath: result.filePath };
+});
+
+// 一次录制导出多份成片：选一次目录，按 <base>_<后缀>.<ext> 一起落盘
+ipcMain.handle('record:saveBatch', async (_e, { files = [] } = {}) => {
+  const list = (Array.isArray(files) ? files : []).filter(f => f && f.buffer);
+  if (!list.length) return { success: false, filePaths: [] };
+
+  const ext = String(list[0].ext || 'webm').replace(/^\./, '');
+  const base = list[0].base
+    || `recording-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
+
+  const result = await dialog.showOpenDialog(controlWin, {
+    title: `选择保存目录（本次导出 ${list.length} 个文件）`,
+    defaultPath: app.getPath('videos'),
+    buttonLabel: '保存到此处',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (result.canceled || !result.filePaths?.length) return { success: false, filePaths: [] };
+
+  const dir = result.filePaths[0];
+  const written = [];
+  for (const f of list) {
+    const e = String(f.ext || ext).replace(/^\./, '');
+    const name = `${f.base || base}_${f.suffix || 'video'}.${e}`;
+    const target = path.join(dir, name);
+    fs.writeFileSync(target, Buffer.from(f.buffer));
+    written.push(target);
+  }
+  if (written.length) shell.showItemInFolder(written[0]);
+  return { success: true, filePaths: written };
 });
 
 // 本地媒体文件选择（音视频 + 图片）
