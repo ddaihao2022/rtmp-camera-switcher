@@ -9,6 +9,7 @@ const cors = require('cors');
 const path = require('path');
 const timing = require('./timing');
 const codecSniffer = require('./codec');
+const { TranscodeManager, TRANSCODE_SUFFIX } = require('./transcode');
 
 // ─── 端口（可用环境变量覆盖，便于同机跑隔离测试实例，不占用现场的 3001/1935/8000）───
 const PORT = Number(process.env.PORT) || 3001;          // 控制台 / API
@@ -256,6 +257,22 @@ const io = socketIo(server, {
 
 const activeStreams = new Map();
 let selectedOutputStream = null;
+
+// ─── 服务端实时转码 ─────────────────────────────────────────────────────────
+// 把 HEVC/VP9/AV1 这类浏览器放不了的编码实时转成 H.264，再推回本机 NMS。
+// 默认开启；设 TRANSCODE_DISABLED=1 可关掉（这种情况只能靠推流端改 H.264）。
+const TRANSCODE_DISABLED = process.env.TRANSCODE_DISABLED === '1';
+const transcode = new TranscodeManager({ rtmpHost: '127.0.0.1', rtmpPort: RTMP_PORT });
+
+// 转码状态变化 → 同步到对应机位对象并推给前端
+transcode.on('update', (parentKey, info) => {
+  const stream = activeStreams.get(parentKey);
+  if (!stream) return; // 父流已下线，忽略
+  stream.transcodeStatus = info.status;          // pending | ready | stopped | error
+  stream.transcodedStreamKey = info.childKey || null;
+  stream.transcodedFlvPath = info.childKey ? `/${info.childKey}.flv` : null;
+  emitStreamUpdate();
+});
 
 // 专业转场预设（TAKE / 数字切源时生效）
 let transitionConfig = {
@@ -587,6 +604,14 @@ nms.on('postPublish', (session) => {
   // 立刻挂钩，抢在推流端发 metadata / AVC sequence header 之前（轮询挂钩会漏包）
   installBroadcastHook(streamPath, NmsContext.broadcasts.get(streamPath));
 
+  // 转码子流（_h264 结尾）：不进机位列表，只负责把"已就绪"状态回传给父流
+  if (TRANSCODE_SUFFIX && streamKey.endsWith(TRANSCODE_SUFFIX)) {
+    const parentKey = streamKey.slice(0, -TRANSCODE_SUFFIX.length);
+    transcode.onOutputReady(parentKey, streamKey);
+    logger.info(`[转码] 子流已就绪: ${streamKey} → 父流 ${parentKey}`);
+    return;
+  }
+
   activeStreams.set(streamKey, {
     id: session.id,
     streamKey,
@@ -594,11 +619,27 @@ nms.on('postPublish', (session) => {
     flvPath,
     startTime: new Date(),
     status: 'online',
+    transcodeStatus: null, // pending | ready | stopped | error（由 transcode 事件异步填充）
     ...getStreamDiagnostics(streamPath)
   });
 
   logger.verbose('活跃流:', Array.from(activeStreams.keys()));
   emitStreamUpdate();
+
+  // 延迟判定是否需要转码：等嗅探出真实编码（HEVC/VP9/AV1 才需要）。
+  // 浏览器放不了的编码一律转成 H.264，前端会自动改播转码流。
+  if (!TRANSCODE_DISABLED) {
+    setTimeout(() => {
+      const stream = activeStreams.get(streamKey);
+      if (!stream) return; // 已经下线
+      const diag = getStreamDiagnostics(streamPath);
+      Object.assign(stream, diag); // 刷新一次编码/分辨率
+      if (!diag.browserPlayable) {
+        logger.info(`[转码] ${streamKey} 编码 ${diag.videoCodecLabel} 浏览器放不了，启动实时转码 → ${streamKey}${TRANSCODE_SUFFIX}`);
+        transcode.maybeStart(streamKey, { browserPlayable: false });
+      }
+    }, 2000);
+  }
 });
 
 nms.on('donePublish', (session) => {
@@ -606,8 +647,15 @@ nms.on('donePublish', (session) => {
   const { streamKey, streamPath } = getStreamMeta(rawStreamPath);
   logger.info(`[donePublish] id=${session.id} streamPath=${rawStreamPath} normalized=${streamPath}`);
 
+  // 转码子流下线：父流的转码状态交给 ffmpeg 退出事件去清，这里不处理机位列表
+  if (TRANSCODE_SUFFIX && streamKey.endsWith(TRANSCODE_SUFFIX)) {
+    bitstreamInfo.delete(streamPath);
+    return;
+  }
+
   activeStreams.delete(streamKey);
   bitstreamInfo.delete(streamPath);
+  transcode.stop(streamKey); // 源流停了，杀掉转码进程
 
   if (selectedOutputStream === streamKey) {
     selectedOutputStream = null;

@@ -13,8 +13,12 @@ export function normalizeFlvPath(flvPath = '', streamKey = '') {
 
 export function buildFlvUrl(stream, host = 'http://localhost:8000') {
   const streamKey = String(stream?.streamKey || '').replace(/^\/+|\/+$/g, '');
-  const path = normalizeFlvPath(stream?.flvPath, streamKey);
-  return path ? `${host}${path}` : '';
+  // 服务端已为该流实时转码出 H.264 版本且就绪 → 优先播转码流（兼容 HEVC/VP9/AV1）
+  const path = (stream?.transcodeStatus === 'ready' && stream?.transcodedFlvPath)
+    ? stream.transcodedFlvPath
+    : stream?.flvPath;
+  const normalized = normalizeFlvPath(path, streamKey);
+  return normalized ? `${host}${normalized}` : '';
 }
 
 export function getVideoCodecLabel(stream) {

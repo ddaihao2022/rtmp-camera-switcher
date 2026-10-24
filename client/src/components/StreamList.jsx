@@ -15,7 +15,22 @@ function StreamList({ streams, selectedStream, outputStream, onStreamSelect, onS
         const hotkey = indexOffset + i + 1;
         const codecLabel = getVideoCodecLabel(stream);
         const codecHint = codecLabel !== 'unknown' ? `编码: ${codecLabel}` : null;
-        const unsupportedHint = stream.type !== 'local' && !isBrowserPlayableStream(stream);
+
+        // 编码兼容徽标：转码就绪 / 转码中 / 转码失败 / 不兼容
+        let codecTag = null;
+        if (stream.type !== 'local') {
+          if (stream.transcodeStatus === 'ready') {
+            codecTag = { text: '已转码 H.264', color: '#22c55e', border: 'rgba(34,197,94,0.4)', bg: 'rgba(34,197,94,0.12)' };
+          } else if (!isBrowserPlayableStream(stream)) {
+            if (stream.transcodeStatus === 'pending') {
+              codecTag = { text: '转码中…', color: '#3b82f6', border: 'rgba(59,130,246,0.4)', bg: 'rgba(59,130,246,0.12)' };
+            } else if (stream.transcodeStatus === 'error') {
+              codecTag = { text: '转码失败', color: '#ef4444', border: 'rgba(239,68,68,0.4)', bg: 'rgba(239,68,68,0.12)' };
+            } else {
+              codecTag = { text: '编码不兼容', color: '#f59e0b', border: 'rgba(245,158,11,0.35)', bg: 'rgba(245,158,11,0.12)' };
+            }
+          }
+        }
 
         return (
           <div
@@ -36,16 +51,12 @@ function StreamList({ streams, selectedStream, outputStream, onStreamSelect, onS
               {codecHint && <p className="stream-time">{codecHint}</p>}
               <span className="stream-status online">在线</span>
               {outputStream === stream.streamKey && <span className="output-badge">📡 输出中</span>}
-              {unsupportedHint && (
+              {codecTag && (
                 <span
                   className="stream-status"
-                  style={{
-                    color: '#f59e0b',
-                    borderColor: 'rgba(245, 158, 11, 0.35)',
-                    background: 'rgba(245, 158, 11, 0.12)',
-                  }}
+                  style={{ color: codecTag.color, borderColor: codecTag.border, background: codecTag.bg }}
                 >
-                  编码不兼容
+                  {codecTag.text}
                 </span>
               )}
             </div>

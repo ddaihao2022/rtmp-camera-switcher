@@ -52,7 +52,9 @@ export default function MediaLayer({ streamKey, streams = [], grade = null, onEr
       if (!flvjs.isSupported()) onError?.('浏览器不支持FLV播放');
       return () => {};
     }
-    if (!isBrowserPlayableStream(liveItem || { streamKey })) {
+    // 原流编码浏览器放不了，但服务端已实时转码出 H.264 版本且就绪 → 改用转码流播放
+    const hasReadyTranscode = liveItem && liveItem.transcodeStatus === 'ready' && liveItem.transcodedFlvPath;
+    if (!isBrowserPlayableStream(liveItem || { streamKey }) && !hasReadyTranscode) {
       onError?.(getUnsupportedCodecMessage(liveItem || { streamKey }));
       return () => {};
     }
