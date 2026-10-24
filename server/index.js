@@ -9,6 +9,7 @@ const cors = require('cors');
 const path = require('path');
 const timing = require('./timing');
 const codecSniffer = require('./codec');
+const hevcFix = require('./hevc-fix');
 const { TranscodeManager, TRANSCODE_SUFFIX } = require('./transcode');
 
 // ─── 端口（可用环境变量覆盖，便于同机跑隔离测试实例，不占用现场的 3001/1935/8000）───
@@ -126,12 +127,44 @@ const bitstreamInfo = new Map();
 function installBroadcastHook(path, broadcast) {
   if (!broadcast || broadcast.__patched__) return;
   const orig = broadcast.broadcastMessage;
-  const stat = { calls: 0, bytes: 0 };
+  const stat = { calls: 0, bytes: 0, rateKbps: 0, windowBytes: 0, windowStart: 0 };
   broadcastStats.set(path, stat);
+
+  // 老式 FLV HEVC（codec id 12、无 sequence header）就地改写成标准 enhanced hvc1，
+  // 否则 ffmpeg / flv.js 连分辨率都读不出来，转码直接失败。
+  if (!broadcast.__hevcFixer__) broadcast.__hevcFixer__ = hevcFix.createFixer();
+  const fixer = broadcast.__hevcFixer__;
+
   broadcast.broadcastMessage = (packet) => {
     stat.calls++;
-    stat.bytes += packet?.data?.length || 0;
+    const len = packet?.data?.length || 0;
+    stat.bytes += len;
     stat.subs = broadcast.subscribers.size;
+
+    // 实时码率（kbps）：推流端不发 metadata 时 publisher.videoDatarate 恒为 0，
+    // 导播台就显示成一堆 0，这里用实际广播字节数算
+    const now = Date.now();
+    if (!stat.windowStart) {
+      stat.windowStart = now;
+      stat.windowBytes = 0;
+    }
+    stat.windowBytes += len;
+    const elapsed = now - stat.windowStart;
+    if (elapsed >= 1000) {
+      stat.rateKbps = Math.round((stat.windowBytes * 8) / elapsed);
+      stat.windowBytes = 0;
+      stat.windowStart = now;
+    }
+
+    try {
+      // 关键帧前补发一次 sequence header：中途才连上来的播放器/ffmpeg 也能拿到参数集
+      fixer.process(packet, (seqOrHvcC) => {
+        if (!seqOrHvcC) return;
+        orig(hevcFix.buildSequenceHeaderPacket(seqOrHvcC, packet?.dts ?? 0));
+      });
+    } catch (e) {
+      logger.verbose('[hevc-fix] 改写失败', e.message);
+    }
     try {
       codecSniffer.trackPacket(bitstreamInfo, path, packet);
     } catch (e) {
@@ -543,6 +576,8 @@ function getStreamDiagnostics(streamPath = '') {
   const broadcast = NmsContext.broadcasts.get(normalizedPath);
   const publisher = broadcast?.publisher;
   const sniffed = bitstreamInfo.get(normalizedPath) || {};
+  const fixerDims = broadcast?.__hevcFixer__?.dimensions || null;
+  const stat = broadcastStats.get(normalizedPath) || {};
 
   // 码流里读到的编码最可信；metadata 只是补充（很多推流端根本不发 metadata，
   // 那样 publisher.videoCodec 会一直是初值 0，前端就会误判成"编码不支持"）
@@ -555,10 +590,10 @@ function getStreamDiagnostics(streamPath = '') {
     videoCodec,
     videoCodecLabel: getVideoCodecLabel(videoCodec),
     browserPlayable: isBrowserPlayableVideoCodec(videoCodec),
-    videoWidth: publisher?.videoWidth || sniffed.videoWidth || 0,
-    videoHeight: publisher?.videoHeight || sniffed.videoHeight || 0,
+    videoWidth: publisher?.videoWidth || sniffed.videoWidth || fixerDims?.width || 0,
+    videoHeight: publisher?.videoHeight || sniffed.videoHeight || fixerDims?.height || 0,
     videoFramerate: publisher?.videoFramerate || sniffed.videoFramerate || 0,
-    videoDatarate: publisher?.videoDatarate ?? 0,
+    videoDatarate: publisher?.videoDatarate || stat.rateKbps || 0,
     audioCodec,
     audioChannels: publisher?.audioChannels || 0,
     audioSamplerate: publisher?.audioSamplerate || 0,
