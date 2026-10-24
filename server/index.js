@@ -8,6 +8,7 @@ const socketIo = require('socket.io');
 const cors = require('cors');
 const path = require('path');
 const timing = require('./timing');
+const codecSniffer = require('./codec');
 
 // ─── 端口（可用环境变量覆盖，便于同机跑隔离测试实例，不占用现场的 3001/1935/8000）───
 const PORT = Number(process.env.PORT) || 3001;          // 控制台 / API
@@ -114,21 +115,36 @@ async function getLanInfo() {
 
 // 诊断:监控所有 BroadcastServer，在每次广播 packet 时记录（仅 verbose 模式）
 const broadcastStats = new Map();
+// 编码嗅探结果（按 streamPath 索引）：不依赖推流端 onMetaData，直接读码流
+const bitstreamInfo = new Map();
+
+// 挂钩一个 broadcast：统计吞吐 + 嗅探编码。
+// 必须在 postPublish 里同步调用一次 —— 推流端的 metadata / AVC sequence header
+// 往往在 publish 后几十毫秒内就发完了，只靠下面的轮询挂钩会漏掉 seq header，
+// 导致分辨率解析不出来。
+function installBroadcastHook(path, broadcast) {
+  if (!broadcast || broadcast.__patched__) return;
+  const orig = broadcast.broadcastMessage;
+  const stat = { calls: 0, bytes: 0 };
+  broadcastStats.set(path, stat);
+  broadcast.broadcastMessage = (packet) => {
+    stat.calls++;
+    stat.bytes += packet?.data?.length || 0;
+    stat.subs = broadcast.subscribers.size;
+    try {
+      codecSniffer.trackPacket(bitstreamInfo, path, packet);
+    } catch (e) {
+      logger.verbose('[编码嗅探] 解析失败', e.message);
+    }
+    return orig(packet);
+  };
+  broadcast.__patched__ = true;
+  logger.verbose(`已挂钩 broadcast ${path}`);
+}
+
 setInterval(() => {
   for (const [path, broadcast] of NmsContext.broadcasts.entries()) {
-    if (!broadcast.__patched__) {
-      const orig = broadcast.broadcastMessage;
-      const stat = { calls: 0, bytes: 0 };
-      broadcastStats.set(path, stat);
-      broadcast.broadcastMessage = (packet) => {
-        stat.calls++;
-        stat.bytes += packet?.data?.length || 0;
-        stat.subs = broadcast.subscribers.size;
-        return orig(packet);
-      };
-      broadcast.__patched__ = true;
-      logger.verbose(`已挂钩 broadcast ${path}`);
-    }
+    installBroadcastHook(path, broadcast);
   }
   for (const session of NmsContext.sessions.values()) {
     if (session.protocol === 'rtmp' && session.rtmp && !session.__patchedRtmp__) {
@@ -490,9 +506,10 @@ const FOURCC_VP9 = Buffer.from('vp09').readUInt32BE(0);
 const FOURCC_AV1 = Buffer.from('av01').readUInt32BE(0);
 
 function getVideoCodecLabel(videoCodec) {
-  if (videoCodec == null || videoCodec === '') return 'unknown';
+  if (videoCodec == null || videoCodec === '' || videoCodec === 0 || videoCodec === '0') return 'unknown';
   const raw = String(videoCodec).toLowerCase();
   if (videoCodec === 7 || raw === '7' || raw.includes('h264') || raw.includes('avc')) return 'H.264';
+  if (videoCodec === 12 || raw === '12') return 'H.265/HEVC'; // FLV 传统 HEVC codec id
   if (videoCodec === FOURCC_HEVC || raw.includes('h265') || raw.includes('hevc') || raw.includes('hvc1')) return 'H.265/HEVC';
   if (videoCodec === FOURCC_VP9 || raw.includes('vp9') || raw.includes('vp09')) return 'VP9';
   if (videoCodec === FOURCC_AV1 || raw.includes('av1') || raw.includes('av01')) return 'AV1';
@@ -508,20 +525,26 @@ function getStreamDiagnostics(streamPath = '') {
   const normalizedPath = normalizeStreamPath(streamPath);
   const broadcast = NmsContext.broadcasts.get(normalizedPath);
   const publisher = broadcast?.publisher;
-  const videoCodec = publisher?.videoCodec ?? null;
-  const audioCodec = publisher?.audioCodec ?? null;
+  const sniffed = bitstreamInfo.get(normalizedPath) || {};
+
+  // 码流里读到的编码最可信；metadata 只是补充（很多推流端根本不发 metadata，
+  // 那样 publisher.videoCodec 会一直是初值 0，前端就会误判成"编码不支持"）
+  const metaVideoCodec = publisher?.videoCodec;
+  const hasMetaVideo = metaVideoCodec != null && metaVideoCodec !== '' && metaVideoCodec !== 0;
+  const videoCodec = sniffed.videoCodec ?? (hasMetaVideo ? metaVideoCodec : null);
+  const audioCodec = sniffed.audioCodec ?? (publisher?.audioCodec || null);
 
   return {
     videoCodec,
     videoCodecLabel: getVideoCodecLabel(videoCodec),
     browserPlayable: isBrowserPlayableVideoCodec(videoCodec),
-    videoWidth: publisher?.videoWidth ?? 0,
-    videoHeight: publisher?.videoHeight ?? 0,
-    videoFramerate: publisher?.videoFramerate ?? 0,
+    videoWidth: publisher?.videoWidth || sniffed.videoWidth || 0,
+    videoHeight: publisher?.videoHeight || sniffed.videoHeight || 0,
+    videoFramerate: publisher?.videoFramerate || sniffed.videoFramerate || 0,
     videoDatarate: publisher?.videoDatarate ?? 0,
     audioCodec,
-    audioChannels: publisher?.audioChannels ?? 0,
-    audioSamplerate: publisher?.audioSamplerate ?? 0,
+    audioChannels: publisher?.audioChannels || 0,
+    audioSamplerate: publisher?.audioSamplerate || 0,
   };
 }
 
@@ -560,6 +583,10 @@ nms.on('postPublish', (session) => {
   const { streamKey, streamPath, flvPath } = getStreamMeta(rawStreamPath);
   logger.info(`[postPublish] id=${session.id} streamPath=${rawStreamPath} normalized=${streamPath}`);
 
+  bitstreamInfo.delete(streamPath); // 丢掉上一次推流残留的嗅探结果
+  // 立刻挂钩，抢在推流端发 metadata / AVC sequence header 之前（轮询挂钩会漏包）
+  installBroadcastHook(streamPath, NmsContext.broadcasts.get(streamPath));
+
   activeStreams.set(streamKey, {
     id: session.id,
     streamKey,
@@ -580,6 +607,7 @@ nms.on('donePublish', (session) => {
   logger.info(`[donePublish] id=${session.id} streamPath=${rawStreamPath} normalized=${streamPath}`);
 
   activeStreams.delete(streamKey);
+  bitstreamInfo.delete(streamPath);
 
   if (selectedOutputStream === streamKey) {
     selectedOutputStream = null;

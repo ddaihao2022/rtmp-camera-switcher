@@ -17,6 +17,7 @@
     "test:intro": "node tests/intro.e2e.js",
     "test:scoreboard": "node tests/scoreboard-canvas.test.mjs",
     "test:roster": "node tests/roster-parse.test.mjs",
+    "test:codec": "node tests/codec-sniff.test.mjs",
     "test:program": "node tests/program-api.test.mjs",
     "test:program:e2e": "node tests/program-flow.e2e.mjs",
     "test:recording:e2e": "node tests/recording-dual.cdp.mjs",
