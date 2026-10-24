@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import flvjs from 'flv.js';
-import { buildFlvUrl, getUnsupportedCodecMessage, isBrowserPlayableStream } from '../utils/stream';
+import { buildFlvUrl, canPlayWithTranscode, getUnsupportedCodecMessage } from '../utils/stream';
 import { FLV_PREVIEW_OPTIONS, FLV_PROGRAM_OPTIONS, startCatchUp, tryPlay } from '../utils/lowLatency';
 import { buildFilter } from '../utils/color';
 import GradeVeil from './GradeVeil';
@@ -212,7 +212,7 @@ function LivePlayer({ stream, compact, program, grade, onVideoReady, onVideoUnmo
     if (!videoRef.current) return;
     if (!flvjs.isSupported()) { setError('浏览器不支持FLV播放'); return; }
 
-    if (!isBrowserPlayableStream(stream)) { setError(getUnsupportedCodecMessage(stream)); return; }
+    if (!canPlayWithTranscode(stream)) { setError(getUnsupportedCodecMessage(stream)); return; }
     const FLV_HOST = 'http://localhost:8000';
     const flvUrl = buildFlvUrl(stream, FLV_HOST);
 

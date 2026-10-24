@@ -43,6 +43,15 @@ export function isBrowserPlayableStream(stream) {
   return codec === 'unknown' || codec === 'H.264';
 }
 
+/**
+ * 能不能播这条流（含转码兜底）：
+ * 原流编码浏览器放不了，但服务端已实时转码出 H.264 版本且就绪 → 改播转码流，不该拦
+ */
+export function canPlayWithTranscode(stream) {
+  if (isBrowserPlayableStream(stream)) return true;
+  return stream?.transcodeStatus === 'ready' && Boolean(stream?.transcodedFlvPath);
+}
+
 export function getUnsupportedCodecMessage(stream) {
   const codec = getVideoCodecLabel(stream);
   if (codec === 'unknown' || codec === 'H.264') return '';

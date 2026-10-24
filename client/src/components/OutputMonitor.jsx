@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import flvjs from 'flv.js';
-import { buildFlvUrl, getUnsupportedCodecMessage, isBrowserPlayableStream } from '../utils/stream';
+import { buildFlvUrl, canPlayWithTranscode, getUnsupportedCodecMessage } from '../utils/stream';
 import { FLV_PREVIEW_OPTIONS, startCatchUp, tryPlay } from '../utils/lowLatency';
 import { buildFilter } from '../utils/color';
 import GradeVeil from './GradeVeil';
@@ -70,7 +70,7 @@ function OutputMonitor({ streamKey, streams, grade = null }) {
     if (!videoRef.current || !flvjs.isSupported()) return;
 
     const matched = streams.find(s => s.streamKey === streamKey) || { streamKey };
-    if (!isBrowserPlayableStream(matched)) {
+    if (!canPlayWithTranscode(matched)) {
       setError(getUnsupportedCodecMessage(matched));
       return;
     }

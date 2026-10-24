@@ -4,7 +4,7 @@
  */
 import { useEffect, useRef } from 'react';
 import flvjs from 'flv.js';
-import { buildFlvUrl, getUnsupportedCodecMessage, isBrowserPlayableStream } from '../utils/stream';
+import { buildFlvUrl, canPlayWithTranscode, getUnsupportedCodecMessage } from '../utils/stream';
 import { FLV_PROGRAM_OPTIONS, startCatchUp, tryPlay } from '../utils/lowLatency';
 import { buildFilter } from '../utils/color';
 
@@ -53,8 +53,7 @@ export default function MediaLayer({ streamKey, streams = [], grade = null, onEr
       return () => {};
     }
     // 原流编码浏览器放不了，但服务端已实时转码出 H.264 版本且就绪 → 改用转码流播放
-    const hasReadyTranscode = liveItem && liveItem.transcodeStatus === 'ready' && liveItem.transcodedFlvPath;
-    if (!isBrowserPlayableStream(liveItem || { streamKey }) && !hasReadyTranscode) {
+    if (!canPlayWithTranscode(liveItem || { streamKey })) {
       onError?.(getUnsupportedCodecMessage(liveItem || { streamKey }));
       return () => {};
     }
