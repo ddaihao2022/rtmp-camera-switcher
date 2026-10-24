@@ -7,7 +7,7 @@
     "server": "node server/index.js",
     "client": "cd client && npm run dev",
     "build:client": "cd client && npm run build",
-    "electron": "electron .",
+    "electron": "node electron/launch.js",
     "dev": "concurrently -k -n SERVER,CLIENT,APP -c blue,green,magenta \"npm:server\" \"npm:client\" \"wait-on http://localhost:5173 && npm run electron\"",
     "build": "npm run build:client && electron-builder",
     "build:dir": "npm run build:client && electron-builder --dir",
