@@ -1,7 +1,7 @@
 # RTMP Camera Switcher · RTMP 多摄影设备管理系统
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-blue" />
+  <img src="https://img.shields.io/badge/version-1.1.0-blue" />
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" />
   <img src="https://img.shields.io/badge/license-GPL--3.0-green" />
   <img src="https://img.shields.io/badge/electron-31-47848F" />
@@ -27,12 +27,15 @@
 |---|---|---|
 | 多路预览 | Multi-stream preview | 单屏 / 网格视图，最多同时预览 4 路 |
 | HDMI 输出切换 | HDMI output switching | 任意流全屏输出到第二显示器，切换实时生效 |
+| 输出带声音 | Output audio | 可选让输出窗口自行出声（默认静音，避免与主窗口叠音） |
 | 音频混音台 | Audio mixer | 独立窗口，VU 表 + 频谱 + 音量推子 + 静音，不额外拉流 |
-| 本地媒体导入 | Local media import | 将本地视频/音频作为虚拟流，与直播流同等操作 |
+| 本地媒体导入 | Local media import | 将本地视频/音频/图片作为虚拟流，与直播流同等操作 |
 | 水印叠加 | Watermark overlay | 文字或图片水印，低透明度叠在输出画面上 |
-| 输出录制 | Output recording | 录制当前输出画面，WebM/MP4 格式，系统对话框保存 |
+| 输出录制 | Output recording | 边录边写盘，长录制不占内存；音轨取自混音台实际输出 |
 | 数字快捷键 | Number key switching | 按 1–9 直接切换输出源 |
-| 设置面板 | Settings panel | 统一的设置弹窗管理 HDMI、水印、调试日志 |
+| 断流保持输出 | Output hold on reconnect | 断流后 30 秒内同设备重连，输出自动续上，HDMI 不黑屏 |
+| 远端服务端 | Remote server | 设置里填内网 IP，即可把收流机与控制机分开部署 |
+| 设置面板 | Settings panel | 统一的设置弹窗管理 HDMI、水印、服务端地址、调试日志 |
 | 调试日志窗口 | Debug log window | 实时日志查看，支持关键词过滤和文件导出 |
 | 低延迟播放 | Low-latency playback | 禁用 GOP 缓存 + 自动追播，延迟 <1 秒 |
 
@@ -145,6 +148,10 @@ The app displays the full push URL in the sidebar automatically.
 5. 输出窗口在目标显示器全屏打开 / Output window opens fullscreen on the target display
 6. 切换主输出后 HDMI 窗口实时跟随，无需额外操作 / Switch source anytime — HDMI follows instantly
 
+**输出带声音 / Output audio：** 默认输出窗口只走画面（主窗口已通过 Web Audio 出声，再放一遍会叠音）。
+需要展示端扬声器出声时，勾选输出面板的「输出带声音」并重新开启输出，然后在 🎚 音频混音台把那一路**静音**
+——主窗口静音、输出窗口照常出声，正好避免叠音。
+
 ### 键盘快捷键 · Keyboard Shortcuts
 
 | 按键 Key | 动作 Action |
@@ -184,11 +191,24 @@ Imported files are registered as virtual streams — play, select as output, and
 ### 录制输出 · Recording
 
 1. 先选择一路流作为输出 / Select an output stream first
-2. 侧边栏 **⏺ 录制输出** 面板点 **⏺ 开始录制** / Click **⏺ Start Recording**
-3. 点 **⏹ 停止并保存** 后弹出系统保存对话框 / Click **⏹ Stop & Save** → system save dialog
+2. 侧边栏 **⏺ 录制输出** 面板点 **⏺ 开始录制** → 先弹系统保存对话框选路径 / Click **⏺ Start Recording** → choose a path first
+3. 点 **⏹ 停止并保存** / Click **⏹ Stop & Save**
 
-格式优先 WebM (VP9+Opus)，浏览器不支持时回退到 MP4。  
-Format: WebM (VP9+Opus) preferred, MP4 as fallback.
+录制实现要点 / Implementation notes:
+
+- **边录边写盘**：每 1 秒的分片直接追加写入文件，内存里不保留历史数据，长录制不会 OOM
+  （旧版把整段录制攒成 blob 再一次性过 IPC，几分钟 1080p 就会吃掉数 GB 内存）
+- **音轨取自 Web Audio 图**（gain 之后），也就是**混音台推子与静音会直接影响录制结果**；
+  不从 `videoEl.captureStream()` 取音轨，因为元素一旦被 `createMediaElementSource` 接管，
+  captureStream 拿到的往往是静音轨
+- 格式优先 WebM (VP9+Opus)，不支持时回退 MP4 / WebM (VP8+Opus)
+
+### 远端服务端 · Remote Server
+
+服务端与控制端可以分开部署：在 **⚙️ 设置 → 🌐 服务端地址** 里填收流机的内网 IP，
+保存后窗口自动重载。也可以用 URL 参数 `?server=192.168.1.50` 指定一次（会被记住）。
+
+详见 [DEPLOYMENT.md](./DEPLOYMENT.md) 的「形态 B」。
 
 ### 水印 · Watermark
 
