@@ -156,8 +156,10 @@ class StreamEngine(
                 if (!running.get()) return@Thread // stop 引发的中断，静默收场
                 callback.onError("RTMP 连接失败：${e.message ?: e.javaClass.simpleName}")
                 teardown()
-                running.set(false)
-                callback.onState(State.ERROR, "连接失败")
+                // 首次建连失败也走统一重连：手机上电/网络还没就绪是常态，
+                // 以前这里直接置 ERROR 停流，必须人工跑去点“开始推流”。
+                callback.onState(State.CONNECTING, "连接失败，自动重试")
+                handlePipelineFailure()
                 return@Thread
             }
 
@@ -179,8 +181,10 @@ class StreamEngine(
             } catch (e: Throwable) {
                 callback.onError("启动采集失败：${e.message}")
                 teardown()
-                running.set(false)
-                callback.onState(State.ERROR, "启动失败")
+                if (!running.get()) return@Thread
+                // 相机被别的应用占用、编码器偶发失败都很常见，退避后重来
+                callback.onState(State.CONNECTING, "启动失败，自动重试")
+                handlePipelineFailure()
             }
         }, "stream-start").apply { isDaemon = true; start() }
     }
@@ -489,7 +493,7 @@ class StreamEngine(
 
     // ------------------------------------------------------------------ failure
 
-    /** 链路任一处挂掉：有限次自动重连，仍失败则置 ERROR 并停流。 */
+    /** 链路任一处挂掉：一直重连，直到用户手动停止。 */
     private fun handlePipelineFailure() {
         if (!running.get()) return
         if (!failing.compareAndSet(false, true)) return
@@ -502,11 +506,14 @@ class StreamEngine(
             callback.onState(State.ERROR, "重连失败")
             return
         }
-        callback.onLog("链路异常，${RECONNECT_DELAY_MS / 1000}s 后进行第 $reconnectAttempts 次重连…")
+        // 1.5s → 3s → 6s → 10s 封顶，别在一秒钟内把 5 次机会全部浪费掉
+        val delayMs = (RECONNECT_DELAY_MS shl (reconnectAttempts - 1).coerceIn(0, 4))
+            .coerceAtMost(RECONNECT_MAX_DELAY_MS)
+        callback.onLog("链路异常，${delayMs / 1000.0}s 后进行第 $reconnectAttempts 次重连…")
 
         val t = Thread({
             try {
-                Thread.sleep(RECONNECT_DELAY_MS)
+                Thread.sleep(delayMs)
             } catch (e: InterruptedException) {
                 return@Thread
             }
@@ -544,7 +551,8 @@ class StreamEngine(
     }
 
     companion object {
-        private const val MAX_RECONNECT = 5
+        private const val MAX_RECONNECT = Int.MAX_VALUE   // 现场网络抖动很常见：一直重连，直到用户手动停止
         private const val RECONNECT_DELAY_MS = 1500L
+        private const val RECONNECT_MAX_DELAY_MS = 10000L
     }
 }

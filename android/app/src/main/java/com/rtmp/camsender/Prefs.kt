@@ -59,6 +59,15 @@ class Prefs(context: Context) {
         get() = sp.getInt("camera", 0)
         set(v) = sp.edit().putInt("camera", v).apply()
 
+    /**
+     * 用户主动开始推流后置 true，手动停止时置 false。
+     * 安卓在长时间后台运行后可能杀掉进程；系统用 START_STICKY 重启服务时
+     * 靠这个标记自动恢复推流，避免现场“过一会儿自己掉”。
+     */
+    var autoResume: Boolean
+        get() = sp.getBoolean("autoResume", false)
+        set(v) = sp.edit().putBoolean("autoResume", v).apply()
+
     /** 老版本存的是静态分辨率表下标（0=1080p / 1=720p / 2=480p / 3=360p），做一次迁移。 */
     private fun legacySize(): Pair<Int, Int> = when (sp.getInt("resolution", 0)) {
         1 -> 1280 to 720

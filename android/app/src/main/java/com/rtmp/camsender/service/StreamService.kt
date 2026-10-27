@@ -8,12 +8,15 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.view.Surface
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.rtmp.camsender.MainActivity
+import com.rtmp.camsender.Prefs
 import com.rtmp.camsender.R
 import com.rtmp.camsender.stream.StreamConfig
 import com.rtmp.camsender.stream.StreamEngine
@@ -59,6 +62,8 @@ class StreamService : Service(), StreamEngine.Callback {
             instance?.stopStream()
             pendingConfig = config
             pendingPreview = preview
+            // 记录“用户要求推流”：进程被系统杀掉后服务重启时据此自动恢复
+            Prefs(context.applicationContext).autoResume = true
             val intent = Intent(context, StreamService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -82,6 +87,35 @@ class StreamService : Service(), StreamEngine.Callback {
     private var currentConfig: StreamConfig? = null
     private var foreground = false
 
+    // 长时间推流必须自己抓住 CPU 和 Wi-Fi：否则息屏/Doze 后编码器停摆，
+    // 服务端 12 秒收不到包就判定无画面，现场看起来就是“推一会儿自己掉”。
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+
+    private fun acquireLocks() {
+        if (wakeLock == null) {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "camsender:stream").also {
+                it.setReferenceCounted(false)
+                runCatching { it.acquire() }
+            }
+        }
+        if (wifiLock == null) {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "camsender:wifi").also {
+                it.setReferenceCounted(false)
+                runCatching { it.acquire() }
+            }
+        }
+    }
+
+    private fun releaseLocks() {
+        runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+        wakeLock = null
+        runCatching { wifiLock?.takeIf { it.isHeld }?.release() }
+        wifiLock = null
+    }
+
     /** 当前链路状态，供界面重新进入时对齐 UI。 */
     @Volatile
     var lastState: StreamEngine.State = StreamEngine.State.IDLE
@@ -103,6 +137,26 @@ class StreamService : Service(), StreamEngine.Callback {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // intent == null：进程被系统回收后由 START_STICKY 自动拉起。
+        // 如果用户之前没有主动停止，就用上次的设置自动恢复推流。
+        if (intent == null && engine == null) {
+            val prefs = Prefs(applicationContext)
+            val saved = if (prefs.autoResume) prefs.toConfig() else null
+            if (saved == null) {
+                // 用户已经手动停止（或配置不完整）：不要留在后台空转
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            startForegroundCompat("正在推流 · ${saved.streamKey}")
+            currentConfig = saved
+            val e = StreamEngine(applicationContext, saved, this)
+            engine = e
+            acquireLocks()
+            pushLog("进程被系统回收，已按上次设置自动恢复推流：${saved.rtmpUrl}")
+            e.start(null)
+            return START_STICKY
+        }
+
         when (intent?.action) {
             ACTION_STOP -> {
                 stopStream()
@@ -130,6 +184,7 @@ class StreamService : Service(), StreamEngine.Callback {
         currentConfig = config
         val e = StreamEngine(applicationContext, config, this)
         engine = e
+        acquireLocks()
         pushLog("服务已启动，配置：${config.rtmpUrl}")
         e.start(pendingPreview)
         return START_STICKY
@@ -145,6 +200,9 @@ class StreamService : Service(), StreamEngine.Callback {
     }
 
     fun stopStream() {
+        // 用户主动停止：取消自动恢复，否则服务被系统重启后又会自己推起来
+        Prefs(applicationContext).autoResume = false
+        releaseLocks()
         engine?.stop()
         engine = null
         currentConfig = null
@@ -158,6 +216,7 @@ class StreamService : Service(), StreamEngine.Callback {
     }
 
     override fun onDestroy() {
+        releaseLocks()
         engine?.stop()
         engine = null
         instance = null
