@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
+import { eventDisplayName } from '../utils/eventName';
 
 const API = 'http://localhost:3001';
 
@@ -17,6 +18,23 @@ export default function TrackPanel() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showTpl, setShowTpl] = useState(false);
   const [showProgram, setShowProgram] = useState(false);
+  // 名次输入错误提示（P2-6：非法道次不能静默吞掉）
+  const [orderErr, setOrderErr] = useState('');
+  // 最佳成绩：本地编辑，失焦 / 回车才提交，避免每敲一个字都 POST 一次
+  const [bestMark, setBestMark] = useState('');
+  const [bestEditing, setBestEditing] = useState(false);
+  const skipBestCommit = useRef(false);
+  // 全屏成绩自动收起秒数：本地编辑，失焦 / 回车才提交
+  const [resultsSecs, setResultsSecs] = useState('0');
+  const [resultsEditing, setResultsEditing] = useState(false);
+
+  useEffect(() => {
+    if (!bestEditing) setBestMark(cfg?.bestMark || '');
+  }, [cfg?.bestMark, bestEditing]);
+
+  useEffect(() => {
+    if (!resultsEditing) setResultsSecs(String(Math.max(0, Number(cfg?.fullResultsDuration) || 0)));
+  }, [cfg?.fullResultsDuration, resultsEditing]);
 
   useEffect(() => {
     fetch(`${API}/api/scoreboard`).then(r => r.json()).then(setCfg).catch(() => {});
@@ -52,7 +70,10 @@ export default function TrackPanel() {
     }
   };
 
-  const clockAction = (action) => post({ mode: 'track', clockAction: action });
+  const clockAction = (action) => {
+    if (action === 'reset' && !window.confirm('清零跑表？当前计时和记圈会全部丢失。')) return;
+    post({ mode: 'track', clockAction: action });
+  };
 
   const applyTemplate = (id) => {
     const tpl = templates.find(t => t.id === id);
@@ -72,18 +93,20 @@ export default function TrackPanel() {
 
   const flipGender = () => {
     const next = cfg?.category === '女子' ? '男子' : '女子';
-    const name = String(cfg?.eventName || '').replace(/^(男子|女子)/, next);
+    const name = String(cfg?.eventName || '').replace(/男子|女子/, next);
     post({ category: next, eventName: name });
   };
 
   const applyFinishOrder = () => {
-    const order = orderText
+    const tokens = orderText
       .split(/[\s,，、>→]+/)
       .map(s => s.trim())
-      .filter(Boolean)
-      .map(Number)
-      .filter(n => Number.isFinite(n) && n > 0);
-    if (!order.length) return;
+      .filter(Boolean);
+    if (!tokens.length) { setOrderErr('请输入道次，例如 4 5 3 1'); return; }
+    const bad = tokens.find((t) => !/^\d+$/.test(t) || Number(t) <= 0);
+    if (bad) { setOrderErr(`“${bad}”不是有效道次，请只填 1、2、3…`); return; }
+    const order = tokens.map(Number);
+    setOrderErr('');
     post({ finishOrder: order, showPlaces: true, showResults: true });
     setOrderText('');
   };
@@ -92,6 +115,22 @@ export default function TrackPanel() {
     let v = String(wind).trim();
     if (v && !/^[+-]/.test(v) && /^[\d.]+$/.test(v)) v = `+${v}`;
     post({ wind: v });
+  };
+
+  const commitBestMark = () => {
+    setBestEditing(false);
+    if (skipBestCommit.current) { skipBestCommit.current = false; return; }
+    if (String(bestMark || '') === String(cfg?.bestMark || '')) return;
+    post({ bestMark });
+  };
+
+  const commitResultsSecs = () => {
+    setResultsEditing(false);
+    const v = Math.max(0, Math.min(120, Math.floor(Number(resultsSecs) || 0)));
+    setResultsSecs(String(v));
+    if (v !== (Math.max(0, Number(cfg?.fullResultsDuration) || 0))) {
+      post({ fullResultsDuration: v });
+    }
   };
 
   if (!cfg) {
@@ -105,7 +144,7 @@ export default function TrackPanel() {
   const isTeam = cfg.mode === 'team';
   const isIntro = cfg.mode === 'intro';
   const isField = cfg.eventKind === 'field';
-  const shortEvent = `${cfg.category || ''}${String(cfg.eventName || '').replace(/^(男子|女子)/, '')}`;
+  const shortEvent = eventDisplayName(cfg.eventName, cfg.category);
   const introRoster = (cfg.athletes || []).filter(a => String(a.name || '').trim() || a.photo);
   const introIdx = Math.min(Math.max(0, Number(cfg.introIndex) || 0), Math.max(introRoster.length - 1, 0));
   const introCur = introRoster[introIdx];
@@ -153,6 +192,17 @@ export default function TrackPanel() {
           )}
           <button
             type="button"
+            className={`tp-chip ${cfg.fullResultsVisible ? 'active' : ''}`}
+            disabled={busy}
+            title={cfg.fullResultsVisible
+              ? '收起全屏成绩，回到直播画面'
+              : '把当前项目的名次成绩全屏盖到输出画面'}
+            onClick={() => post({ resultsAction: 'toggle' })}
+          >
+            🏁 成绩
+          </button>
+          <button
+            type="button"
             className={`tp-chip tp-chip--more ${showTpl ? 'active' : ''}`}
             onClick={() => setShowTpl(v => !v)}
           >
@@ -175,13 +225,40 @@ export default function TrackPanel() {
             </span>
           </div>
           <div className="tp-program-btns">
-            <button type="button" className="tp-btn" disabled={busy}
+            <button type="button" className="tp-btn"
+              disabled={busy || programIdx <= 0}
+              title={programIdx <= 0 ? '已经是第一节' : '回到上一节'}
               onClick={() => post({ programAction: 'prev' })}>◀ 上一项</button>
-            <button type="button" className="tp-btn primary" disabled={busy}
-              title="切到下一节：项目 / 轮次 / 组次 / 名册一次就位（快捷键 PageDown）"
+            <button type="button" className="tp-btn primary"
+              disabled={busy || programIdx >= program.length - 1}
+              title={programIdx >= program.length - 1
+                ? '已经是最后一节'
+                : '切到下一节：项目 / 轮次 / 组次 / 名册一次就位（快捷键 PageDown）'}
               onClick={() => post({ programAction: 'next' })}>下一项 ▶</button>
             <button type="button" className={`tp-btn ${showProgram ? 'active' : ''}`}
               onClick={() => setShowProgram(v => !v)}>{showProgram ? '收起 ▴' : '全部 ▾'}</button>
+          </div>
+          <div className="tp-program-results">
+            <label className="tp-toggle" title="按「下一项 / 上一项」后，自动把刚结束项目的成绩全屏上屏">
+              <input type="checkbox" checked={cfg.fullResultsAuto !== false} disabled={busy}
+                onChange={e => post({ fullResultsAuto: e.target.checked })} />
+              <span>成绩自动上屏</span>
+            </label>
+            <label className="tp-toggle tp-results-secs" title="自动收起秒数；0 = 一直显示，手动收起">
+              <input
+                type="number"
+                min="0"
+                max="120"
+                step="1"
+                value={resultsSecs}
+                disabled={busy}
+                onFocus={() => setResultsEditing(true)}
+                onChange={e => setResultsSecs(e.target.value)}
+                onBlur={commitResultsSecs}
+                onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+              />
+              <span>秒后收起</span>
+            </label>
           </div>
           {showProgram && (
             <div className="track-panel-templates track-panel-templates--open">
@@ -309,6 +386,7 @@ export default function TrackPanel() {
                 <button type="button" className="tp-btn primary" onClick={applyFinishOrder}
                   disabled={busy || !orderText.trim()}>录</button>
               </div>
+              {orderErr && <p className="hint" style={{ color: '#f59e0b', margin: '2px 0 0' }}>{orderErr}</p>}
             </div>
           )}
 
@@ -351,8 +429,11 @@ export default function TrackPanel() {
                     <button type="button" className="tp-btn primary" onClick={applyFinishOrder}
                       disabled={busy || !orderText.trim()}>录入</button>
                     <button type="button" className="tp-btn ghost" disabled={busy}
-                      onClick={() => post({ clearPlaces: true })}>清</button>
+                      onClick={() => {
+                        if (window.confirm('清除所有名次？已录入的 1/2/3… 名次会被清空。')) post({ clearPlaces: true });
+                      }}>清</button>
                   </div>
+                  {orderErr && <p className="hint" style={{ color: '#f59e0b', margin: '2px 0 0' }}>{orderErr}</p>}
                 </div>
               )}
 
@@ -389,10 +470,20 @@ export default function TrackPanel() {
                     onClick={() => post({ attempt: Math.min(cfg.attemptsTotal, (cfg.attempt || 1) + 1) })}>+</button>
                   <input
                     className="tp-best"
-                    value={cfg.bestMark || ''}
+                    value={bestMark}
                     placeholder="最佳 7.85m"
-                    disabled={busy}
-                    onChange={e => post({ bestMark: e.target.value })}
+                    onChange={e => { setBestEditing(true); setBestMark(e.target.value); }}
+                    onFocus={() => setBestEditing(true)}
+                    onBlur={commitBestMark}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') { e.currentTarget.blur(); }
+                      if (e.key === 'Escape') {
+                        skipBestCommit.current = true;
+                        setBestMark(cfg?.bestMark || '');
+                        setBestEditing(false);
+                        e.currentTarget.blur();
+                      }
+                    }}
                   />
                 </div>
               )}

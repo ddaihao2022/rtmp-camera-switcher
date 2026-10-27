@@ -5,6 +5,8 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import AthleteIntro from './AthleteIntro';
+import FullResultsBoard from './FullResultsBoard';
+import { eventDisplayName } from '../utils/eventName';
 
 function formatMs(ms) {
   const total = Math.max(0, Math.floor(ms));
@@ -83,9 +85,7 @@ function TrackOverlay({ config }) {
       .slice(0, 3);
   }, [showPodium, athletes]);
 
-  const title = category && eventName && !eventName.startsWith(category)
-    ? `${category} ${eventName}`
-    : eventName;
+  const title = eventDisplayName(eventName, category);
 
   return (
     <div className="track-bug" aria-label="田径信息条">
@@ -180,6 +180,10 @@ function TeamBar({ config }) {
 }
 
 function ScoreboardOverlay({ config, className = '' }) {
+  // 全屏成绩是一次性盖板：即使信息条总开关关着，也必须能完整上屏
+  if (config?.fullResultsVisible && config?.fullResultsSnapshot) {
+    return <FullResultsBoard config={config} className={className} />;
+  }
   if (!config?.enabled) return null;
   const mode = config.mode || 'track';
 

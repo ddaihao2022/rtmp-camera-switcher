@@ -45,9 +45,22 @@ for (const [label, width, height, hex] of SAMPLES) {
     const body = Buffer.from(hex, 'hex');
     assert.equal(body[0] & 0x0f, 7);
     assert.equal(body[1], 0); // AVCPacketType = 0（sequence header）
-    assert.deepEqual(codec.parseAvcSequenceHeader(body), { width, height });
+    const dims = codec.parseAvcSequenceHeader(body);
+    assert.equal(dims.width, width);
+    assert.equal(dims.height, height);
+    assert.equal(dims.bitDepth, 8);
+    assert.equal(dims.chromaFormatIdc, 1);
   });
 }
+
+test('applyPacket 从 AVC sequence header 记录 8-bit 4:2:0', () => {
+  const info = codec.createStreamInfo();
+  const body = Buffer.from(SAMPLES[0][3], 'hex');
+  codec.applyPacket(info, { codec_type: 9, flags: 2, data: body });
+  assert.equal(info.videoCodec, 7);
+  assert.equal(info.videoBitDepth, 8);
+  assert.equal(info.videoChromaFormat, 1);
+});
 
 test('applyPacket 统计帧率与编码', () => {
   const info = codec.createStreamInfo();

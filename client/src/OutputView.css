@@ -40,6 +40,13 @@ body.output-mode #root {
   z-index: 1;
 }
 
+/* 预加载层：正在后台解码，但不可见；切到它时只改 class，不重建 player */
+.layer-preload {
+  z-index: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .layer-current {
   z-index: 2;
 }

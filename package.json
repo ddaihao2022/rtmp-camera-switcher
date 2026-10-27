@@ -1,6 +1,6 @@
 {
   "name": "rtmp-camera-system",
-  "version": "1.2.1",
+  "version": "1.4.2",
   "description": "田径赛事导播台 · RTMP 多机位切换 / HDMI 多路分发 / 道次成绩与跑表",
   "main": "electron/main.js",
   "scripts": {
@@ -18,8 +18,11 @@
     "test:scoreboard": "node tests/scoreboard-canvas.test.mjs",
     "test:roster": "node tests/roster-parse.test.mjs",
     "test:codec": "node tests/codec-sniff.test.mjs",
+    "test:codecs": "node tests/codec-matrix.e2e.mjs",
     "test:program": "node tests/program-api.test.mjs",
     "test:program:e2e": "node tests/program-flow.e2e.mjs",
+    "test:meets": "node tests/meets-api.test.mjs",
+    "test:results": "node tests/results-api.test.mjs",
     "test:recording:e2e": "node tests/recording-dual.cdp.mjs",
     "test:recording:sources": "node tests/recording-sources.e2e.mjs",
     "test:settings-window": "node tests/settings-window.cdp.mjs",
@@ -63,6 +66,8 @@
       "electron/**/*",
       "server/**/*",
       "client/dist/**/*",
+      "public/**/*",
+      "data/meets/**/*",
       "package.json"
     ],
     "extraResources": [

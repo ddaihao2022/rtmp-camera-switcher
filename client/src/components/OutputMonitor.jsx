@@ -7,7 +7,7 @@ import { buildFilter } from '../utils/color';
 import GradeVeil from './GradeVeil';
 import ScoreboardOverlay from './ScoreboardOverlay';
 
-const FLV_HOST = 'http://localhost:8000';
+const FLV_HOST = 'http://127.0.0.1:8000';
 
 /**
  * 主控窗口里的「PROGRAM 监视」浮窗
@@ -25,11 +25,21 @@ function OutputMonitor({ streamKey, streams, grade = null }) {
   })();
   const videoRef = useRef(null);
   const playerRef = useRef(null);
+  const bodyRef = useRef(null);
   const [collapsed, setCollapsed] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [error, setError] = useState(null);
   const [scoreboard, setScoreboard] = useState(null);
   const [fx, setFx] = useState(null);
+  const [stageScale, setStageScale] = useState(0);
+
+  // streams 每次 streamUpdate 都是新数组/新对象（服务端每秒都可能推一次），
+  // 不能直接进 effect 依赖，否则播放器每秒被销毁重建一次（画面一直黑）
+  const matched = streams.find(s => s.streamKey === streamKey) || { streamKey };
+  const flvUrl = streamKey ? buildFlvUrl(matched, FLV_HOST) : '';
+  const unsupportedMessage = streamKey && !canPlayWithTranscode(matched)
+    ? getUnsupportedCodecMessage(matched)
+    : '';
 
   useEffect(() => {
     fetch('http://localhost:3001/api/scoreboard')
@@ -51,6 +61,18 @@ function OutputMonitor({ streamKey, streams, grade = null }) {
     if (streamKey) setHidden(false);
   }, [streamKey]);
 
+  // 叠加层按 1280×720 设计稿绘制，再整体缩放进 360px 的小监看：
+  // 否则 scoreboard 的 vw/px 尺寸会按主窗口算，信息条会比浮窗还宽、被裁掉。
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return undefined;
+    const apply = () => setStageScale(el.clientWidth / 1280);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [streamKey, hidden, collapsed]);
+
   useEffect(() => {
     const safeDestroy = () => {
       if (playerRef.current) {
@@ -69,15 +91,13 @@ function OutputMonitor({ streamKey, streams, grade = null }) {
     if (!streamKey || hidden || collapsed) return;
     if (!videoRef.current || !flvjs.isSupported()) return;
 
-    const matched = streams.find(s => s.streamKey === streamKey) || { streamKey };
-    if (!canPlayWithTranscode(matched)) {
-      setError(getUnsupportedCodecMessage(matched));
+    if (unsupportedMessage) {
+      setError(unsupportedMessage);
       return;
     }
-    const url = buildFlvUrl(matched, FLV_HOST);
 
     const player = flvjs.createPlayer(
-      { type: 'flv', url, isLive: true, hasAudio: false, hasVideo: true },
+      { type: 'flv', url: flvUrl, isLive: true, hasAudio: false, hasVideo: true },
       FLV_PREVIEW_OPTIONS
     );
     player.on(flvjs.Events.ERROR, (t, d) => setError(`${t}: ${d}`));
@@ -102,7 +122,7 @@ function OutputMonitor({ streamKey, streams, grade = null }) {
       v?.removeEventListener('loadeddata', tryPlayOnce);
       safeDestroy();
     };
-  }, [streamKey, streams, hidden, collapsed]);
+  }, [streamKey, flvUrl, unsupportedMessage, hidden, collapsed]);
 
   if (!streamKey || hidden) return null;
 
@@ -133,7 +153,7 @@ function OutputMonitor({ streamKey, streams, grade = null }) {
         </div>
       </div>
       {!collapsed && (
-        <div className="output-monitor-body">
+        <div className="output-monitor-body" ref={bodyRef}>
           <video
             ref={videoRef}
             className="output-monitor-video"
@@ -150,7 +170,12 @@ function OutputMonitor({ streamKey, streams, grade = null }) {
               aria-hidden="true"
             />
           )}
-          <ScoreboardOverlay config={scoreboard} />
+          <div
+            className="output-monitor-stage"
+            style={{ transform: `scale(${stageScale})`, opacity: stageScale ? 1 : 0 }}
+          >
+            <ScoreboardOverlay config={scoreboard} />
+          </div>
           {!isLive && (
             <div className="output-monitor-msg">等待 {streamKey} 上线…</div>
           )}

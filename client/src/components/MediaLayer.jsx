@@ -9,7 +9,8 @@ import { FLV_PROGRAM_OPTIONS, startCatchUp, tryPlay } from '../utils/lowLatency'
 import { buildFilter } from '../utils/color';
 
 const API = 'http://localhost:3001';
-const FLV_HOST = 'http://localhost:8000';
+// 输出/HDMI 窗口与主窗口的机位墙分开走 127.0.0.1，避免撞上 6 连接的并发上限
+const FLV_HOST = 'http://127.0.0.1:8000';
 
 /** 调色 → 内联 filter（叠加层由外层 GradeVeil 负责） */
 function gradeStyle(grade) {
@@ -30,6 +31,20 @@ export default function MediaLayer({ streamKey, streams = [], grade = null, onEr
         : `${API}/api/local/stream/${encodeURIComponent(String(localItem.streamKey).replace(/^local\//, ''))}`)
     : null;
 
+  // streams 每次 streamUpdate 都是新数组/新对象（服务端每秒都可能推一次），
+  // 不能直接进 effect 依赖，否则 HDMI 输出画面每秒被销毁重建一次
+  const isLocal = Boolean(localItem);
+  // 流还没进列表（刚切过去/刚上线）也照常拼地址，交给 flv.js 去连，
+  // 别因为暂时查不到诊断信息就不播
+  const flvUrl = (!isLocal && streamKey) ? buildFlvUrl(liveItem || { streamKey }, FLV_HOST) : '';
+  const unsupportedMessage = (!isLocal && liveItem && !canPlayWithTranscode(liveItem))
+    ? getUnsupportedCodecMessage(liveItem)
+    : '';
+
+  // 回调放 ref：OutputView 里 onError 有内联箭头函数，进依赖会让 effect 无谓重跑
+  const onErrorRef = useRef(onError);
+  useEffect(() => { onErrorRef.current = onError; });
+
   useEffect(() => {
     const safeDestroy = () => {
       if (playerRef.current) {
@@ -43,27 +58,26 @@ export default function MediaLayer({ streamKey, streams = [], grade = null, onEr
     };
 
     safeDestroy();
-    onError?.(null);
+    onErrorRef.current?.(null);
 
     // 本地素材走原生标签
-    if (localItem || !streamKey) return () => {};
+    if (isLocal || !streamKey) return () => {};
 
     if (!videoRef.current || !flvjs.isSupported()) {
-      if (!flvjs.isSupported()) onError?.('浏览器不支持FLV播放');
+      if (!flvjs.isSupported()) onErrorRef.current?.('浏览器不支持FLV播放');
       return () => {};
     }
     // 原流编码浏览器放不了，但服务端已实时转码出 H.264 版本且就绪 → 改用转码流播放
-    if (!canPlayWithTranscode(liveItem || { streamKey })) {
-      onError?.(getUnsupportedCodecMessage(liveItem || { streamKey }));
+    if (unsupportedMessage) {
+      onErrorRef.current?.(unsupportedMessage);
       return () => {};
     }
 
-    const url = buildFlvUrl(liveItem || { streamKey }, FLV_HOST);
     const player = flvjs.createPlayer(
-      { type: 'flv', url, isLive: true, hasAudio: false, hasVideo: true },
+      { type: 'flv', url: flvUrl, isLive: true, hasAudio: false, hasVideo: true },
       FLV_PROGRAM_OPTIONS
     );
-    const onErr = (t, d) => onError?.(`${t}: ${d}`);
+    const onErr = (t, d) => onErrorRef.current?.(`${t}: ${d}`);
     player.on(flvjs.Events.ERROR, onErr);
     player.attachMediaElement(videoRef.current);
     player.load();
@@ -80,7 +94,7 @@ export default function MediaLayer({ streamKey, streams = [], grade = null, onEr
       try { player.off?.(flvjs.Events.ERROR, onErr); } catch {}
       safeDestroy();
     };
-  }, [streamKey, streams, localItem, liveItem, onError]);
+  }, [streamKey, isLocal, flvUrl, unsupportedMessage]);
 
   if (!streamKey) return null;
 

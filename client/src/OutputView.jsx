@@ -64,6 +64,7 @@ function OutputView() {
   });
   const [streamKey, setStreamKey] = useState(pinnedSource);
   const [outgoingKey, setOutgoingKey] = useState(null);
+  const [previewKey, setPreviewKey] = useState(null);
   const [fx, setFx] = useState(null); // { type, duration, direction, id }
   const [streams, setStreams] = useState([]);
   const [error, setError] = useState(null);
@@ -111,7 +112,10 @@ function OutputView() {
     }
     fetch(`${API_HOST}/api/output`)
       .then(r => r.json())
-      .then(d => setStreamKey(d.selectedStream || null))
+      .then(d => {
+        setStreamKey(d.selectedStream || null);
+        setPreviewKey(d.previewStream || null);
+      })
       .catch(() => {});
   }, [pinnedSource]);
 
@@ -119,6 +123,7 @@ function OutputView() {
     const socket = io(API_HOST);
     socket.on('streamUpdate', setStreams);
     socket.on('outputTransition', beginTransition);
+    socket.on('previewSelected', ({ streamKey: key } = {}) => setPreviewKey(key || null));
     socket.on('outputSelected', ({ streamKey: key }) => {
       if (pinnedSource) return;
       // 转场进行中由 outputTransition 接管；硬切直接切换
@@ -148,9 +153,14 @@ function OutputView() {
   const localItem = streams.find(s => s.streamKey === streamKey && s.type === 'local');
   const showOutgoing = !!fx && !!outgoingKey && outgoingKey !== streamKey;
 
-  // 调色：机位覆盖优先，否则全局；转场期间新旧两层各自取自己的参数
-  const currentGrade = resolveGrade(colorGrade, streamKey);
-  const outgoingGrade = resolveGrade(colorGrade, outgoingKey);
+  // 预加载池：当前输出、转场中的旧画面、主控预览(PVW) 三路常驻。
+  // TAKE 时只是把它从“隐藏/预热”改成“当前”，播放器不重建 → 不会等关键帧黑屏。
+  const layerKeys = [];
+  if (streamKey) layerKeys.push(streamKey);
+  if (showOutgoing && outgoingKey && !layerKeys.includes(outgoingKey)) layerKeys.push(outgoingKey);
+  if (previewKey && streams.some(s => s.streamKey === previewKey) && !layerKeys.includes(previewKey)) layerKeys.push(previewKey);
+
+  // 调色：每一层各自取自己的参数（全局 / 机位覆盖），在渲染时按 streamKey 解析
 
   const fxClass = fx
     ? `fx fx-${fx.type}${fx.type === 'wipe' || fx.type === 'slide' ? ` fx-dir-${fx.direction}` : ''}`
@@ -162,19 +172,23 @@ function OutputView() {
 
   return (
     <div className={`output-root ${fxClass}`} style={fxStyle}>
-      {streamKey || outgoingKey ? (
+      {layerKeys.length ? (
         <div className="output-stage">
-          {showOutgoing && (
-            <div className="media-layer layer-outgoing" key={`out-${outgoingKey}-${fx?.id}`}>
-              <MediaLayer streamKey={outgoingKey} streams={streams} grade={outgoingGrade} onError={() => {}} />
-              <GradeVeil grade={outgoingGrade} />
-            </div>
-          )}
-          <div className={`media-layer layer-current ${showOutgoing ? 'layer-animating' : ''}`}
-            key={`cur-${streamKey}-${fx?.id || 'idle'}`}>
-            <MediaLayer streamKey={streamKey} streams={streams} grade={currentGrade} onError={handleError} />
-            <GradeVeil grade={currentGrade} />
-          </div>
+          {layerKeys.map((k) => {
+            const isCurrent = k === streamKey;
+            const isOutgoing = showOutgoing && k === outgoingKey;
+            const role = isCurrent ? 'layer-current' : (isOutgoing ? 'layer-outgoing' : 'layer-preload');
+            const g = resolveGrade(colorGrade, k);
+            return (
+              <div
+                key={`layer-${k}`}
+                className={`media-layer ${role} ${isCurrent && showOutgoing ? 'layer-animating' : ''}`}
+              >
+                <MediaLayer streamKey={k} streams={streams} grade={g} onError={isCurrent ? handleError : undefined} />
+                <GradeVeil grade={g} />
+              </div>
+            );
+          })}
           {(fx?.type === 'dip' || fx?.type === 'mix') && showOutgoing && (
             <div className="fx-veil" aria-hidden="true" />
           )}

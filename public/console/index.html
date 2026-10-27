@@ -1,0 +1,869 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<title>宇华运动会 · 网页控台</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121922; --panel2:#0f151d; --line:#243041;
+    --txt:#e5e7eb; --muted:#94a3b8; --dim:#64748b;
+    --accent:#f59e0b; --accent2:#2563eb; --green:#22c55e; --red:#ef4444;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);
+    font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+  body{padding-bottom:32px}
+  button,input,select,textarea{font:inherit;color:inherit}
+  button{cursor:pointer}
+  .top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;
+    padding:10px 12px;background:rgba(11,15,20,.96);border-bottom:1px solid var(--line);
+    backdrop-filter:blur(8px)}
+  .brand{font-weight:800;letter-spacing:.03em;font-size:15px;white-space:nowrap}
+  .brand small{display:block;font-weight:500;color:var(--dim);font-size:11px;letter-spacing:0}
+  .status{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 0 3px rgba(239,68,68,.12)}
+  .dot.on{background:var(--green);box-shadow:0 0 0 3px rgba(34,197,94,.12)}
+  .eventbar{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--panel2);
+    border-bottom:1px solid var(--line)}
+  .eventbar .ev{min-width:0;flex:1}
+  .ev-name{font-weight:800;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ev-meta{margin-top:2px;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pos{flex:none;font-variant-numeric:tabular-nums;font-weight:700;color:var(--accent);
+    background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);
+    border-radius:999px;padding:4px 10px;font-size:12px}
+  .tabs{position:sticky;top:53px;z-index:15;display:flex;gap:6px;overflow-x:auto;padding:8px 12px;
+    background:rgba(11,15,20,.97);border-bottom:1px solid var(--line);scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs button{flex:none;border:1px solid var(--line);background:var(--panel);color:var(--muted);
+    border-radius:999px;padding:8px 14px;font-weight:700;font-size:13px}
+  .tabs button.on{background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.55);color:#fde68a}
+  main{padding:12px;max-width:1100px;margin:0 auto}
+  .tab{display:none}
+  .tab.on{display:block}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+  .card h3{margin:0 0 8px;font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.04em}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .row + .row{margin-top:8px}
+  .grow{flex:1;min-width:140px}
+  button.btn,button.primary,button.danger,button.ghost{
+    border:1px solid var(--line);background:var(--panel2);color:var(--txt);
+    border-radius:10px;padding:10px 14px;font-weight:700;font-size:14px;min-height:42px}
+  button.primary{background:linear-gradient(180deg,#b45309,#92400e);border-color:#d97706;color:#fff}
+  button.blue{background:linear-gradient(180deg,#1d4ed8,#1e40af);border-color:#3b82f6;color:#fff}
+  button.danger{border-color:rgba(239,68,68,.45);color:#fca5a5;background:rgba(239,68,68,.08)}
+  button.ghost{background:transparent;color:var(--muted)}
+  button:disabled{opacity:.38;cursor:not-allowed}
+  input[type=text],input[type=number],select,textarea{
+    width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+    padding:10px 11px;min-height:42px;outline:none}
+  input:focus,select:focus,textarea:focus{border-color:rgba(245,158,11,.65)}
+  label.field{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+  .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  @media(max-width:560px){.grid2{grid-template-columns:1fr}}
+  .check{display:flex;align-items:center;gap:8px;min-height:42px;color:var(--txt)}
+  .check input{width:20px;height:20px;accent-color:var(--accent)}
+  .clock{font-variant-numeric:tabular-nums;font-weight:800;font-size:44px;text-align:center;
+    letter-spacing:.04em;padding:6px 0 10px;color:#fff}
+  .clock.running{color:#86efac}
+  .session{position:sticky;top:0;z-index:2;padding:6px 4px;margin-top:6px;
+    color:#fbbf24;font-size:12px;font-weight:800;letter-spacing:.05em;
+    background:linear-gradient(180deg,var(--bg) 70%,transparent)}
+  .prog-list{max-height:calc(100vh - 300px);overflow:auto;border:1px solid var(--line);
+    border-radius:12px;background:var(--panel)}
+  .prow{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+    border:0;border-bottom:1px solid rgba(36,48,65,.65);background:transparent;
+    padding:10px 12px;color:var(--txt)}
+  .prow:last-child{border-bottom:0}
+  .prow.on{background:rgba(245,158,11,.12);box-shadow:inset 3px 0 0 var(--accent)}
+  .prow .t{flex:none;width:48px;color:var(--muted);font-variant-numeric:tabular-nums;font-size:12px}
+  .prow .n{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
+  .prow .m{flex:none;color:var(--dim);font-size:11px}
+  .roster-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+  table{border-collapse:collapse;width:100%;min-width:760px}
+  th,td{padding:6px;border-bottom:1px solid rgba(36,48,65,.7);text-align:left;font-size:13px}
+  th{position:sticky;top:0;background:var(--panel2);color:var(--muted);font-size:11px;z-index:1}
+  td input{min-height:36px;padding:6px 8px;font-size:13px}
+  td.lane{width:44px;text-align:center;color:var(--muted);font-variant-numeric:tabular-nums}
+  .out-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(36,48,65,.7)}
+  .out-row:last-child{border-bottom:0}
+  .out-key{flex:1;min-width:0;word-break:break-all;font-weight:700}
+  .badge{font-size:11px;padding:2px 7px;border-radius:999px;background:rgba(148,163,184,.15);color:var(--muted)}
+  .badge.pgm{background:rgba(34,197,94,.16);color:#86efac}
+  .timing-lane{display:grid;grid-template-columns:34px 1fr auto auto;gap:8px;align-items:center;
+    padding:7px 0;border-bottom:1px solid rgba(36,48,65,.6);font-size:13px}
+  .timing-lane:last-child{border-bottom:0}
+  .timing-lane .ln{font-weight:800;color:var(--muted);text-align:center}
+  .timing-lane .nm{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .timing-lane .tm{font-weight:800;font-variant-numeric:tabular-nums;color:#86efac}
+  .timing-lane .ct{color:var(--dim);font-size:11px}
+  .qr-card{display:grid;justify-items:center;gap:6px;text-align:center}
+  .qr-card img{width:100%;max-width:190px;aspect-ratio:1;height:auto;background:#fff;
+    border-radius:10px;padding:6px}
+  .url{font-size:11px;color:#93c5fd;word-break:break-all}
+  .hint{color:var(--muted);font-size:12px;line-height:1.6}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);
+    background:#111827;border:1px solid var(--line);border-radius:10px;padding:10px 16px;
+    font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50;max-width:90vw;text-align:center}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast.err{border-color:rgba(239,68,68,.5);color:#fca5a5}
+  .toast.ok{border-color:rgba(34,197,94,.5);color:#86efac}
+  .kbd{font-family:ui-monospace,Consolas,monospace;background:var(--panel2);
+    border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:11px}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">宇华运动会 · 网页控台<small>仅限校内局域网 · 与主控实时同步</small></div>
+  <div class="status"><span class="dot" id="dot"></span><span id="statusText">连接中…</span></div>
+</header>
+
+<div class="eventbar">
+  <div class="ev">
+    <div class="ev-name" id="evName">—</div>
+    <div class="ev-meta" id="evMeta">等待主控数据…</div>
+  </div>
+  <div class="pos" id="pos">0/0</div>
+</div>
+
+<nav class="tabs">
+  <button data-tab="program" class="on">节目单</button>
+  <button data-tab="event">项目</button>
+  <button data-tab="roster">名册</button>
+  <button data-tab="output">输出</button>
+  <button data-tab="timing">计时</button>
+  <button data-tab="board">成绩公示</button>
+</nav>
+
+<main>
+  <!-- 节目单 -->
+  <section class="tab on" id="tab-program">
+    <div class="card">
+      <div class="row">
+        <button class="btn grow" id="prevBtn">◀ 上一项</button>
+        <button class="primary grow" id="applyBtn">应用当前</button>
+        <button class="primary grow" id="nextBtn">下一项 ▶</button>
+      </div>
+      <div class="row">
+        <input type="text" id="search" class="grow" placeholder="搜索项目 / 时间 / 组次">
+        <select id="meetSel" class="grow"></select>
+        <button class="btn" id="loadMeet">载入赛程</button>
+      </div>
+      <p class="hint" style="margin:8px 0 0">
+        点任意一行可直接跳到该节；现场也可用 <span class="kbd">PageDown</span> / <span class="kbd">PageUp</span>。
+      </p>
+    </div>
+    <div class="prog-list" id="progList"></div>
+  </section>
+
+  <!-- 项目 -->
+  <section class="tab" id="tab-event">
+    <div class="card">
+      <h3>当前项目</h3>
+      <div class="grid2">
+        <div><label class="field">项目名称</label><input type="text" id="fEvent"></div>
+        <div><label class="field">类别</label>
+          <select id="fCat">
+            <option value="男子">男子</option>
+            <option value="女子">女子</option>
+            <option value="混合">混合</option>
+          </select>
+        </div>
+        <div><label class="field">轮次</label>
+          <select id="fRound">
+            <option value="预赛">预赛</option>
+            <option value="预决赛">预决赛</option>
+            <option value="决赛">决赛</option>
+          </select>
+        </div>
+        <div><label class="field">组次</label><input type="text" id="fHeat" placeholder="第1组"></div>
+        <div><label class="field">项目类型</label>
+          <select id="fKind">
+            <option value="sprint">径赛（短跑）</option>
+            <option value="middle">中长跑（800/1500）</option>
+            <option value="long">长距离（马拉松）</option>
+            <option value="relay">接力</option>
+            <option value="field">田赛</option>
+          </select>
+        </div>
+        <div><label class="field">上屏</label>
+          <label class="check"><input type="checkbox" id="fEnabled"> 成绩条显示</label>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="primary grow" id="saveEvent">保存项目</button>
+        <button class="btn" id="clearPlaces">清空名次</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>跑表</h3>
+      <div class="clock" id="clock">0.00</div>
+      <div class="row">
+        <button class="primary grow" data-clock="start">开始</button>
+        <button class="btn grow" data-clock="stop">暂停</button>
+        <button class="btn grow" data-clock="reset">复位</button>
+        <button class="btn grow" data-clock="lap">计圈</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" data-mode="track">田径成绩条</button>
+        <button class="btn" data-mode="team">球队比分</button>
+        <button class="btn" data-mode="intro">选手介绍</button>
+      </div>
+      <p class="hint" style="margin:8px 0 0">跑表与主控、HDMI、录制同源；开始/暂停会立即广播到所有画面。</p>
+    </div>
+  </section>
+
+  <!-- 名册 -->
+  <section class="tab" id="tab-roster">
+    <div class="card row">
+      <button class="btn" id="reloadRoster">刷新名册</button>
+      <button class="primary grow" id="saveRoster">保存名册</button>
+    </div>
+    <div class="roster-wrap">
+      <table>
+        <thead>
+          <tr><th>道</th><th>姓名</th><th>班级 / 单位</th><th>号码</th><th>PB</th><th>名次</th><th>成绩</th></tr>
+        </thead>
+        <tbody id="rosterBody"></tbody>
+      </table>
+    </div>
+    <p class="hint" style="margin:8px 0 0">名册来自节目单当前节；现场补录后点「保存名册」写回主控。</p>
+  </section>
+
+  <!-- 输出 -->
+  <section class="tab" id="tab-output">
+    <div class="card">
+      <h3>PROGRAM 输出</h3>
+      <div id="outList"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn danger grow" id="clearOut">清除输出（黑场）</button>
+      </div>
+      <p class="hint" style="margin:8px 0 0">切换输出会同步到 HDMI、PROGRAM 监看和录制源；多人同时操作时以最后一次为准。</p>
+    </div>
+  </section>
+
+  <!-- 计时 -->
+  <section class="tab" id="tab-timing">
+    <div class="card">
+      <h3>计时状态</h3>
+      <div id="timingBox" class="hint">等待计时数据…</div>
+      <div class="row" style="margin-top:10px">
+        <button class="primary grow" data-timing="apply">回传成绩+名次</button>
+        <button class="btn grow" data-timing="gun">发令</button>
+        <button class="btn danger grow" data-timing="reset">清空本轮</button>
+      </div>
+    </div>
+    <div class="card qr-card">
+      <h3 style="margin:0">老师扫码录成绩</h3>
+      <img id="timerQr" alt="计时录入二维码">
+      <div class="url" id="timerUrl"></div>
+      <div class="row" style="justify-content:center">
+        <button class="btn" id="copyTimer">复制网址</button>
+        <button class="btn" id="openTimer">打开录入页</button>
+        <button class="btn" id="openMonitor">汇总台</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 成绩公示 -->
+  <section class="tab" id="tab-board">
+    <div class="card">
+      <h3 style="margin:0 0 8px">全屏成绩 · 输出画面</h3>
+      <div class="row">
+        <button class="primary" id="showResults">立即全屏展示</button>
+        <button class="btn" id="hideResults">收起成绩</button>
+      </div>
+      <div class="row" style="margin-top:8px;justify-content:flex-start">
+        <label class="hint" style="display:flex;align-items:center;gap:6px;margin:0">
+          <input type="checkbox" id="resultsAuto"> 切项后自动展示
+        </label>
+        <label class="hint" style="display:flex;align-items:center;gap:6px;margin:0">
+          <input type="number" id="resultsSecs" min="0" max="120" step="1"
+            style="width:62px;padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;text-align:center">
+          秒后自动收起
+        </label>
+      </div>
+      <p class="hint" style="margin:8px 0 0;text-align:left">
+        盖满 HDMI / PROGRAM 输出画面，也会烧进「有成绩条」那份录像。
+        按「下一项」时自动展示刚结束项目的名次成绩；秒数填 0 表示一直显示，直到手动收起。
+      </p>
+    </div>
+
+    <div class="card qr-card">
+      <h3 style="margin:0">扫码查看成绩公示</h3>
+      <img id="boardQr" alt="成绩公示二维码">
+      <div class="url" id="boardUrl"></div>
+      <div class="row" style="justify-content:center">
+        <button class="btn" id="copyBoard">复制网址</button>
+        <button class="primary" id="openBoard">打开公示页</button>
+      </div>
+      <p class="hint" style="margin:6px 0 0;text-align:left">
+        公示页只读、无需登录，手机扫码或投到场地大屏都可以。名次/成绩录入后自动更新；
+        切到下一项时，上一项成绩会自动归档到「全部成绩」。
+      </p>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => Array.from(document.querySelectorAll(s));
+  const S = {
+    cfg: null,
+    streams: [],
+    output: null,
+    timing: null,
+    meets: [],
+    tab: 'program',
+    formKey: '',
+    rosterKey: '',
+    progKey: '',
+    search: '',
+    toastTimer: null,
+  };
+
+  const HAS_GROUP = /(男子|女子|男、女|男女|混合|小学|初中|高中|初一|初二|高一|高二|教职工|小四|小五|小六|焦)/;
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+  const dispName = (name, cat) => {
+    const n = String(name || '').trim();
+    const c = String(cat || '').trim();
+    if (!n) return c || '未设置项目';
+    if (!c || HAS_GROUP.test(n)) return n;
+    return c + n;
+  };
+  const countText = (e) => {
+    if (!e || !e.count) return '';
+    return `${e.count}${e.eventKind === 'relay' ? '队' : '人'}`;
+  };
+  const fmtClock = (ms) => {
+    const total = Math.max(0, Math.floor(Number(ms) || 0));
+    const m = Math.floor(total / 60000);
+    const s = Math.floor((total % 60000) / 1000);
+    const cs = Math.floor((total % 1000) / 10);
+    return m > 0
+      ? `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`
+      : `${s}.${String(cs).padStart(2, '0')}`;
+  };
+  const nowMs = () => {
+    const c = S.cfg;
+    if (!c) return 0;
+    if (c.clockRunning && c.clockStartAt) {
+      return (Number(c.clockOffsetMs) || 0) + (Date.now() - Number(c.clockStartAt));
+    }
+    return Number(c.clockOffsetMs) || 0;
+  };
+
+  function toast(text, tone = '') {
+    const el = $('#toast');
+    el.textContent = text;
+    el.className = `toast show ${tone}`;
+    clearTimeout(S.toastTimer);
+    S.toastTimer = setTimeout(() => { el.className = 'toast'; }, 2600);
+  }
+
+  async function api(path, opts = {}) {
+    const r = await fetch(path, {
+      ...opts,
+      headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+    });
+    const raw = await r.text();
+    let data = {};
+    try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
+    if (!r.ok || data.ok === false || data.success === false) {
+      throw new Error(data.error || data.message || `HTTP ${r.status}`);
+    }
+    return data;
+  }
+  const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body || {}) });
+
+  // ── 渲染：顶部 ──────────────────────────────────────────────
+  function renderHeader() {
+    const c = S.cfg;
+    if (!c) return;
+    const name = dispName(c.eventName, c.category);
+    $('#evName').textContent = name;
+    const program = c.program || [];
+    const idx = Math.max(0, Math.min(program.length - 1, Number(c.programIndex) || 0));
+    const entry = program[idx];
+    const bits = [c.round, c.heat, countText(c), entry && entry.sessionLabel].filter(Boolean);
+    $('#evMeta').textContent = bits.length ? bits.join(' · ') : '未设置轮次';
+    $('#pos').textContent = program.length ? `${idx + 1}/${program.length}` : '0/0';
+  }
+
+  // ── 渲染：节目单 ────────────────────────────────────────────
+  function programKey() {
+    const c = S.cfg || {};
+    const p = c.program || [];
+    return `${p.length}|${c.programIndex}|${S.search}`;
+  }
+
+  function renderProgram(force = false) {
+    if (!force && programKey() === S.progKey) return;
+    S.progKey = programKey();
+    const c = S.cfg || {};
+    const program = c.program || [];
+    const idx = Math.max(0, Math.min(program.length - 1, Number(c.programIndex) || 0));
+    const q = S.search.trim().toLowerCase();
+    let html = '';
+    let lastSession = '';
+    program.forEach((e, i) => {
+      const hay = `${e.time || ''} ${e.eventName || ''} ${e.round || ''} ${e.heat || ''} ${e.sessionLabel || ''}`.toLowerCase();
+      if (q && !hay.includes(q)) return;
+      if (e.sessionLabel && e.sessionLabel !== lastSession) {
+        html += `<div class="session">${esc(e.sessionLabel)}</div>`;
+        lastSession = e.sessionLabel;
+      }
+      const meta = [e.round, e.heat, countText(e)].filter(Boolean).join(' · ');
+      html += `<button class="prow ${i === idx ? 'on' : ''}" data-i="${i}">
+        <span class="t">${esc(e.time || '--:--')}</span>
+        <span class="n">${esc(e.eventName || '未命名项目')}</span>
+        <span class="m">${esc(meta)}</span>
+      </button>`;
+    });
+    $('#progList').innerHTML = html || '<div class="hint" style="padding:16px">没有匹配的节目</div>';
+    $('#prevBtn').disabled = idx <= 0 || !program.length;
+    $('#nextBtn').disabled = idx >= program.length - 1 || !program.length;
+  }
+
+  // ── 渲染：项目表单 ──────────────────────────────────────────
+  function eventKey() {
+    const c = S.cfg || {};
+    return `${c.programIndex}|${c.eventName}|${c.category}|${c.round}|${c.heat}|${c.eventKind}|${c.enabled}`;
+  }
+
+  function renderEventForm(force = false) {
+    if (!S.cfg) return;
+    if (!force && eventKey() === S.formKey) return;
+    S.formKey = eventKey();
+    const c = S.cfg;
+    $('#fEvent').value = c.eventName || '';
+    $('#fCat').value = c.category || '男子';
+    $('#fRound').value = c.round || '预赛';
+    $('#fHeat').value = c.heat || '';
+    $('#fKind').value = c.eventKind || 'sprint';
+    $('#fEnabled').checked = !!c.enabled;
+  }
+
+  // ── 渲染：名册 ──────────────────────────────────────────────
+  function rosterKey() {
+    const c = S.cfg || {};
+    return `${c.programIndex}|${c.eventName}|${c.category}|${c.round}|${c.heat}`;
+  }
+
+  function renderRoster(force = false) {
+    if (!S.cfg) return;
+    const key = rosterKey();
+    const editing = document.activeElement && $('#rosterBody').contains(document.activeElement);
+    if (!force && (key === S.rosterKey || editing)) return;
+    S.rosterKey = key;
+    const athletes = S.cfg.athletes || [];
+    $('#rosterBody').innerHTML = athletes.map((a, i) => {
+      const lane = Number(a.lane) || i + 1;
+      return `<tr data-row="${i}" data-lane="${lane}">
+        <td class="lane">${lane}</td>
+        <td><input data-k="name" value="${esc(a.name)}" placeholder="姓名"></td>
+        <td><input data-k="unit" value="${esc(a.unit)}" placeholder="班级 / 单位"></td>
+        <td><input data-k="bib" value="${esc(a.bib)}" placeholder="号码"></td>
+        <td><input data-k="pb" value="${esc(a.pb)}" placeholder="PB"></td>
+        <td><input data-k="place" value="${esc(a.place)}" placeholder="名次"></td>
+        <td><input data-k="result" value="${esc(a.result)}" placeholder="成绩"></td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="7" class="hint" style="padding:14px">当前节没有名册</td></tr>';
+  }
+
+  // ── 渲染：输出 ──────────────────────────────────────────────
+  function renderOutput() {
+    const list = S.streams || [];
+    $('#outList').innerHTML = list.length ? list.map((s) => {
+      const key = s.streamKey || '';
+      const pgm = key && key === S.output;
+      const name = s.fileName || key;
+      const type = s.type === 'local' ? '本地素材' : '直播';
+      return `<div class="out-row">
+        <div class="out-key">${esc(name)}
+          <div class="hint">${esc(type)}${s.type === 'local' ? '' : ' · RTMP'}${pgm ? ' · 当前输出' : ''}</div>
+        </div>
+        ${pgm ? '<span class="badge pgm">PGM</span>' : `<button class="btn" data-out="${esc(key)}">切到输出</button>`}
+      </div>`;
+    }).join('') : '<div class="hint">暂无信号源</div>';
+  }
+
+  // ── 渲染：计时 ──────────────────────────────────────────────
+  function renderTiming() {
+    const t = S.timing;
+    if (!t) { $('#timingBox').textContent = '等待计时数据…'; return; }
+    const st = t.stats || {};
+    const lanes = Object.values(t.lanes || {}).sort((a, b) => a.lane - b.lane);
+    const judges = (t.judges || []).filter(j => j.active !== false);
+    const ev = t.event || {};
+    const head = `<div style="margin-bottom:8px">
+      <strong>${esc(dispName(ev.eventName, ev.category))}</strong>
+      <span class="hint"> ${esc([ev.round, ev.heat].filter(Boolean).join(' · '))}</span><br>
+      <span class="hint">已录 ${st.submittedLanes || 0}/${st.lanes || lanes.length || 0} 道 · ${st.judgeCount || judges.length || 0} 位老师</span>
+    </div>`;
+    const judgeHtml = judges.length
+      ? `<div class="hint" style="margin-bottom:6px">${judges.map(j => `${esc(j.name)}${j.lanes ? ` · ${j.lanes}道` : ' · 未交'}`).join('　')}</div>`
+      : '';
+    const laneHtml = lanes.map(l => {
+      const a = (S.cfg?.athletes || []).find(x => Number(x.lane) === Number(l.lane)) || {};
+      return `<div class="timing-lane">
+        <span class="ln">${l.lane}</span>
+        <span class="nm">${esc(a.name || '')}</span>
+        <span class="tm">${esc(l.finalText || '—')}</span>
+        <span class="ct">${l.count || 0}人</span>
+      </div>`;
+    }).join('');
+    $('#timingBox').innerHTML = head + judgeHtml + (laneHtml || '<div class="hint">还没有老师提交</div>');
+  }
+
+  function renderTimerQr() {
+    const url = `${location.origin}/timer/`;
+    $('#timerUrl').textContent = url;
+    $('#timerQr').src = `/api/timing/qr.svg?size=220&data=${encodeURIComponent(url)}`;
+  }
+
+  function renderBoardQr() {
+    const url = `${location.origin}/results/`;
+    $('#boardUrl').textContent = url;
+    $('#boardQr').src = `/api/timing/qr.svg?size=220&data=${encodeURIComponent(url)}`;
+  }
+
+  // ── 总渲染 ──────────────────────────────────────────────────
+  function renderActive(force = false) {
+    if (S.tab === 'program') renderProgram(force);
+    else if (S.tab === 'event') renderEventForm(force);
+    else if (S.tab === 'roster') renderRoster(force);
+    else if (S.tab === 'output') renderOutput();
+    else if (S.tab === 'timing') renderTiming();
+  }
+
+  function renderAll(force = false) {
+    renderHeader();
+    renderActive(force);
+  }
+
+  // ── 节目单操作 ──────────────────────────────────────────────
+  async function applyIndex(i) {
+    try {
+      S.cfg = await post('/api/scoreboard', { programAction: 'apply', programIndex: i });
+      S.formKey = ''; S.rosterKey = ''; S.progKey = '';
+      renderAll(true);
+      toast(`已切到第 ${i + 1} 节`, 'ok');
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  async function step(action) {
+    try {
+      S.cfg = await post('/api/scoreboard', { programAction: action });
+      S.formKey = ''; S.rosterKey = ''; S.progKey = '';
+      renderAll(true);
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  // ── 成绩公示：全屏盖板 ──────────────────────────────────────
+  function syncResultsControls() {
+    const auto = $('#resultsAuto');
+    const secs = $('#resultsSecs');
+    const show = $('#showResults');
+    if (!auto || !secs || !show) return;
+    auto.checked = S.cfg?.fullResultsAuto !== false;
+    if (document.activeElement !== secs) {
+      secs.value = String(Math.max(0, Number(S.cfg?.fullResultsDuration) || 0));
+    }
+    show.textContent = S.cfg?.fullResultsVisible ? '正在全屏显示…' : '立即全屏展示';
+    show.classList.toggle('active', !!S.cfg?.fullResultsVisible);
+  }
+
+  async function resultsAction(action) {
+    try {
+      S.cfg = await post('/api/scoreboard', { resultsAction: action });
+      syncResultsControls();
+      if (action === 'hide') toast('成绩已收起', 'ok');
+      else if (S.cfg?.fullResultsVisible) toast('成绩已全屏上屏', 'ok');
+      else toast('当前项目还没有名次或成绩', 'err');
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  async function saveResultsAuto(checked) {
+    try {
+      S.cfg = await post('/api/scoreboard', { fullResultsAuto: !!checked });
+      syncResultsControls();
+      toast(checked ? '切项后自动展示成绩' : '切项后不再自动展示成绩', 'ok');
+    } catch (e) {
+      toast(e.message, 'err');
+      syncResultsControls();
+    }
+  }
+
+  async function saveResultsSecs(value) {
+    const v = Math.max(0, Math.min(120, Math.floor(Number(value) || 0)));
+    try {
+      S.cfg = await post('/api/scoreboard', { fullResultsDuration: v });
+      syncResultsControls();
+      toast(v > 0 ? `成绩 ${v} 秒后自动收起` : '成绩将常显，直到手动收起', 'ok');
+    } catch (e) {
+      toast(e.message, 'err');
+      syncResultsControls();
+    }
+  }
+
+  async function loadMeet() {
+    const id = $('#meetSel').value;
+    if (!id) return;
+    if ((S.cfg?.program || []).length && !confirm(`载入赛程会覆盖现有 ${S.cfg.program.length} 节节目单，继续？`)) return;
+    try {
+      const d = await api(`/api/meets/${encodeURIComponent(id)}/program`);
+      S.cfg = await post('/api/scoreboard', { program: d.program, programIndex: 0, applyFirst: false });
+      S.formKey = ''; S.rosterKey = ''; S.progKey = '';
+      renderAll(true);
+      toast(`已载入 ${d.program.length} 节，点「应用当前」开始`, 'ok');
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  // ── 项目 / 跑表 / 模式 ──────────────────────────────────────
+  async function saveEvent() {
+    try {
+      const patch = {
+        eventName: $('#fEvent').value.trim(),
+        category: $('#fCat').value,
+        round: $('#fRound').value,
+        heat: $('#fHeat').value.trim(),
+        eventKind: $('#fKind').value,
+        enabled: $('#fEnabled').checked,
+      };
+      S.cfg = await post('/api/scoreboard', patch);
+      S.formKey = ''; S.progKey = ''; S.rosterKey = '';
+      renderAll(true);
+      toast('项目已保存', 'ok');
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  async function clockAction(action) {
+    try {
+      S.cfg = await post('/api/scoreboard', { clockAction: action });
+      renderHeader();
+      renderEventForm(true);
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  async function setMode(mode) {
+    try {
+      S.cfg = await post('/api/scoreboard', { mode });
+      renderAll(true);
+      toast(mode === 'track' ? '已切到田径成绩条' : mode === 'team' ? '已切到球队比分' : '已切到选手介绍', 'ok');
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  // ── 名册 ────────────────────────────────────────────────────
+  async function saveRoster() {
+    const rows = $$('#rosterBody tr[data-row]');
+    if (!rows.length) { toast('当前节没有名册', 'err'); return; }
+    const srcList = S.cfg?.athletes || [];
+    const athletes = rows.map((tr, i) => {
+      const get = (k) => tr.querySelector(`[data-k="${k}"]`)?.value.trim() || '';
+      const lane = Number(tr.dataset.lane) || 1;
+      // 名册页没有照片/备注输入框，保存时按原行原样带回，避免把现场照片冲掉
+      const src = srcList.find(a => Number(a.lane) === lane) || srcList[i] || {};
+      return {
+        lane,
+        name: get('name'),
+        unit: get('unit'),
+        bib: get('bib'),
+        pb: get('pb'),
+        place: get('place'),
+        result: get('result'),
+        note: src.note || '',
+        photo: src.photo || '',
+      };
+    });
+    try {
+      S.cfg = await post('/api/scoreboard', { athletes });
+      S.rosterKey = '';
+      renderAll(true);
+      toast('名册已保存', 'ok');
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  // ── 输出 ────────────────────────────────────────────────────
+  async function selectOutput(key) {
+    try {
+      await post('/api/output/select', { streamKey: key });
+      S.output = key;
+      renderOutput();
+      toast(key ? `已切到 ${key}` : '已清除输出', 'ok');
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  // ── 计时 ────────────────────────────────────────────────────
+  async function timingAction(action) {
+    try {
+      if (action === 'apply') {
+        if (!confirm('把当前计时成绩和名次回传到大屏？')) return;
+        const d = await post('/api/timing/apply', { by: '网页控台', withEvent: false });
+        if (d.state) S.timing = d.state;
+        renderTiming();
+        toast('成绩已回传', 'ok');
+      } else if (action === 'gun') {
+        await post('/api/timing/gun', {});
+        toast('已发令，老师端跑表同步启动', 'ok');
+      } else if (action === 'reset') {
+        if (!confirm('清空本轮计时读数？历史记录不会删除。')) return;
+        const d = await post('/api/timing/reset', { scope: 'round' });
+        if (d.state) S.timing = d.state;
+        renderTiming();
+        toast('已清空本轮', 'ok');
+      }
+    } catch (e) { toast(e.message, 'err'); }
+  }
+
+  // ── 事件绑定 ────────────────────────────────────────────────
+  function bind() {
+    $$('.tabs button').forEach((b) => {
+      b.addEventListener('click', () => {
+        S.tab = b.dataset.tab;
+        $$('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+        $$('.tab').forEach(x => x.classList.toggle('on', x.id === `tab-${S.tab}`));
+        renderActive(true);
+      });
+    });
+
+    $('#prevBtn').addEventListener('click', () => step('prev'));
+    $('#nextBtn').addEventListener('click', () => step('next'));
+    $('#applyBtn').addEventListener('click', () => applyIndex(Number(S.cfg?.programIndex) || 0));
+    $('#loadMeet').addEventListener('click', loadMeet);
+    $('#search').addEventListener('input', (e) => {
+      S.search = e.target.value;
+      S.progKey = '';
+      renderProgram(true);
+    });
+    $('#progList').addEventListener('click', (e) => {
+      const row = e.target.closest('[data-i]');
+      if (row) applyIndex(Number(row.dataset.i));
+    });
+
+    $('#saveEvent').addEventListener('click', saveEvent);
+    $('#clearPlaces').addEventListener('click', async () => {
+      if (!confirm('清空当前节的所有名次和成绩？')) return;
+      try {
+        S.cfg = await post('/api/scoreboard', { clearPlaces: true });
+        renderAll(true);
+        toast('已清空名次', 'ok');
+      } catch (e) { toast(e.message, 'err'); }
+    });
+
+    document.addEventListener('click', (e) => {
+      const c = e.target.closest('[data-clock]');
+      if (c) { clockAction(c.dataset.clock); return; }
+      const m = e.target.closest('[data-mode]');
+      if (m) { setMode(m.dataset.mode); return; }
+      const t = e.target.closest('[data-timing]');
+      if (t) { timingAction(t.dataset.timing); return; }
+      const o = e.target.closest('[data-out]');
+      if (o) { selectOutput(o.dataset.out); return; }
+    });
+
+    $('#reloadRoster').addEventListener('click', () => renderRoster(true));
+    $('#saveRoster').addEventListener('click', saveRoster);
+    $('#clearOut').addEventListener('click', () => selectOutput(null));
+    $('#copyTimer').addEventListener('click', async () => {
+      const url = $('#timerUrl').textContent;
+      try { await navigator.clipboard.writeText(url); toast('网址已复制', 'ok'); }
+      catch { prompt('复制下面的网址', url); }
+    });
+    $('#openTimer').addEventListener('click', () => window.open('/timer/', '_blank'));
+    $('#openMonitor').addEventListener('click', () => window.open('/timer/monitor.html', '_blank'));
+    $('#copyBoard').addEventListener('click', async () => {
+      const url = $('#boardUrl').textContent;
+      try { await navigator.clipboard.writeText(url); toast('网址已复制', 'ok'); }
+      catch { prompt('复制下面的网址', url); }
+    });
+    $('#openBoard').addEventListener('click', () => window.open('/results/', '_blank'));
+    $('#showResults').addEventListener('click', () => resultsAction('show'));
+    $('#hideResults').addEventListener('click', () => resultsAction('hide'));
+    $('#resultsAuto').addEventListener('change', e => saveResultsAuto(e.target.checked));
+    $('#resultsSecs').addEventListener('change', e => saveResultsSecs(e.target.value));
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'PageDown' && e.key !== 'PageUp') return;
+      const el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) return;
+      e.preventDefault();
+      step(e.key === 'PageDown' ? 'next' : 'prev');
+    });
+  }
+
+  // ── Socket ──────────────────────────────────────────────────
+  function connectSocket() {
+    const socket = io();
+    socket.on('connect', () => {
+      $('#dot').classList.add('on');
+      $('#statusText').textContent = '已连接';
+    });
+    socket.on('disconnect', () => {
+      $('#dot').classList.remove('on');
+      $('#statusText').textContent = '已断开';
+    });
+    socket.on('scoreboard:update', (cfg) => {
+      S.cfg = cfg;
+      renderHeader();
+      renderActive();
+      syncResultsControls();
+    });
+    socket.on('streamUpdate', (list) => {
+      S.streams = Array.isArray(list) ? list : [];
+      if (S.tab === 'output') renderOutput();
+    });
+    socket.on('outputSelected', (d) => {
+      S.output = d?.streamKey || null;
+      if (S.tab === 'output') renderOutput();
+    });
+    socket.on('timing:update', (t) => {
+      S.timing = t;
+      if (S.tab === 'timing') renderTiming();
+    });
+  }
+
+  async function boot() {
+    bind();
+    connectSocket();
+    renderTimerQr();
+    renderBoardQr();
+
+    try { S.cfg = await api('/api/scoreboard'); } catch {}
+    try { S.streams = await api('/api/streams'); } catch {}
+    try { const o = await api('/api/output'); S.output = o.selectedStream || null; } catch {}
+    try { S.timing = await api('/api/timing'); } catch {}
+    try {
+      S.meets = await api('/api/meets');
+      $('#meetSel').innerHTML = (S.meets || []).map(m =>
+        `<option value="${esc(m.id)}">${esc(m.shortName || m.name)}${m.stats?.programEntries ? `（${m.stats.programEntries} 节）` : ''}</option>`
+      ).join('');
+    } catch {}
+
+    renderAll(true);
+    syncResultsControls();
+
+    // 跑表每秒刷新 10 次；只更新数字，不重排界面
+    setInterval(() => {
+      const el = $('#clock');
+      if (!el) return;
+      el.textContent = fmtClock(nowMs());
+      el.classList.toggle('running', !!S.cfg?.clockRunning);
+    }, 100);
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

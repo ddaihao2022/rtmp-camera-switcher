@@ -7,6 +7,7 @@ import OutputMonitor from './components/OutputMonitor';
 import SettingsModal from './components/SettingsModal';
 import LocalMediaPanel from './components/LocalMediaPanel';
 import RecordPanel from './components/RecordPanel';
+import RecordSource from './components/RecordSource';
 import TrackPanel from './components/TrackPanel';
 import TimingPanel from './components/TimingPanel';
 import SidebarSection from './components/SidebarSection';
@@ -17,6 +18,23 @@ import './App.css';
 import './components/ScoreboardOverlay.css';
 
 const socket = io('http://localhost:3001');
+
+// 快捷键保护：输入框、弹窗里的任何控件都不应该被全局快捷键穿透
+function isEditableTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+}
+
+function isInsideDialog(el) {
+  return !!(el && typeof el.closest === 'function' && el.closest('[role="dialog"]'));
+}
+
+function isButtonLike(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'BUTTON' || tag === 'A' || el.getAttribute?.('role') === 'button';
+}
 
 function App() {
   const [streams, setStreams] = useState([]);
@@ -29,6 +47,13 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsDetached, setSettingsDetached] = useState(false);
   const [scoreboard, setScoreboard] = useState(null);
+  const [toast, setToast] = useState(null); // { text, tone }
+  const toastTimerRef = useRef(null);
+  // 改分：本地先加，再只 POST 一个字段；ref 保证连点不丢增量
+  const scoreRef = useRef({ home: 0, away: 0 });
+  const scoreQueueRef = useRef(Promise.resolve());
+  const scoreSeqRef = useRef(0);
+  const scoreInflightRef = useRef(0);
   const [colorGrade, setColorGrade] = useState(null); // 调色：全局 + 机位覆盖
   const [transition, setTransition] = useState({
     type: 'cut',
@@ -37,8 +62,26 @@ function App() {
   });
   const [pgmFx, setPgmFx] = useState(null);
   const videoRefsMap = useRef(new Map());
+  const recordRefsMap = useRef(new Map());
   const audioStateRef = useRef({});
   const settingsPopupRef = useRef(null); // 浏览器（非 Electron）下弹出的设置窗口
+
+  const showToast = useCallback((text, tone = 'error') => {
+    setToast({ text, tone, id: Date.now() });
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 3500);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
+
+  // 服务端比分变化时同步本地基数；本地改分请求在飞时不覆盖，避免连点回跳
+  useEffect(() => {
+    if (!scoreboard || scoreInflightRef.current > 0) return;
+    scoreRef.current.home = Number(scoreboard.homeScore) || 0;
+    scoreRef.current.away = Number(scoreboard.awayScore) || 0;
+  }, [scoreboard?.homeScore, scoreboard?.awayScore]);
 
   const handleVideoReady = useCallback((streamKey, el) => {
     videoRefsMap.current.set(streamKey, el);
@@ -53,6 +96,14 @@ function App() {
   const handleVideoUnmount = useCallback((streamKey) => {
     videoRefsMap.current.delete(streamKey);
     disconnectStream(streamKey);
+  }, []);
+
+  // 录制专用隐藏源：与预览/网格互不影响，切视图也不会断录制画面
+  const handleRecordVideoReady = useCallback((streamKey, el) => {
+    recordRefsMap.current.set(streamKey, el);
+  }, []);
+  const handleRecordVideoUnmount = useCallback((streamKey) => {
+    recordRefsMap.current.delete(streamKey);
   }, []);
 
   const liveStreams = streams.filter(s => s.type !== 'local');
@@ -189,7 +240,11 @@ function App() {
       }
     });
 
-    socket.on('scoreboard:update', setScoreboard);
+    socket.on('scoreboard:update', (d) => {
+      // 本地改分请求在飞时先不用旧快照覆盖，避免比分闪回
+      if (scoreInflightRef.current > 0) return;
+      setScoreboard(d);
+    });
     socket.on('transition:update', setTransition);
     // 调色参数变更（任意窗口修改后全网同步）
     socket.on('color:update', (d) => setColorGrade(normalizeGrade(d)));
@@ -221,6 +276,15 @@ function App() {
     });
   }, []);
 
+  // 把预览(PVW)选择同步给服务端：输出/HDMI 窗口据此提前预热下一路，
+  // TAKE 时只切显隐，不用等关键帧（否则会黑屏约 1 秒）。
+  useEffect(() => {
+    const send = () => socket.emit('preview:select', { streamKey: selectedStream?.streamKey || null });
+    if (socket.connected) send();
+    socket.on('connect', send);
+    return () => socket.off('connect', send);
+  }, [selectedStream?.streamKey]);
+
   const handleStreamSelect = (stream) => {
     setSelectedStream(stream);
     // 导播台模式下保持当前视图（多画面点击只改预览）
@@ -232,13 +296,16 @@ function App() {
   //   其它视图：数字键沿用旧习惯（置预览 + 切主输出），避免单屏/网格操作员误操作
   useEffect(() => {
     const onKeyDown = (e) => {
-      // 输入框/textarea 获焦、输入法组合中不拦截
-      const tag = document.activeElement?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // 设置弹窗打开、焦点在输入框/弹窗里时，不拦截任何快捷键
+      if (settingsOpen) return;
+      const el = document.activeElement;
+      if (isEditableTarget(el) || isInsideDialog(el)) return;
       if (e.isComposing || e.keyCode === 229) return;
 
-      const num = parseInt(e.key, 10);
-      if (isNaN(num) || num < 1 || num > 9) return;
+      // 用物理键位 e.code：标准键盘 Shift+1 的 e.key 是 "!"，用 e.key 会直接失效
+      const m = /^(?:Digit|Numpad)([1-9])$/.exec(e.code || '');
+      if (!m) return;
+      const num = Number(m[1]);
 
       const allStreams = streams; // liveStreams + localStreams 合并顺序
       const target = allStreams[num - 1];
@@ -262,15 +329,18 @@ function App() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streams, viewMode]);
+  }, [streams, viewMode, settingsOpen]);
 
   // 导播台：Enter / Space = CUT；T = 跑表开始/暂停；Shift+T = 清零
   useEffect(() => {
     if (viewMode !== 'director') return;
     const onKey = (e) => {
-      const tag = document.activeElement?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (settingsOpen) return;
+      const el = document.activeElement;
+      if (isEditableTarget(el) || isInsideDialog(el)) return;
       if (e.key === 'Enter' || e.key === ' ') {
+        // 焦点在按钮/链接上时，让 Enter/Space 去按那个按钮，不要偷偷 CUT
+        if (isButtonLike(el)) return;
         e.preventDefault();
         handleCut();
         return;
@@ -297,7 +367,7 @@ function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, selectedStream, outputStream, streams, scoreboard]);
+  }, [viewMode, selectedStream, outputStream, streams, scoreboard, settingsOpen]);
 
   // 进入导播台时若无预览，自动选第一路作为 PVW
   useEffect(() => {
@@ -312,15 +382,16 @@ function App() {
     const onKey = (e) => {
       if (e.key !== 'PageDown' && e.key !== 'PageUp') return;
       if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-      const tag = document.activeElement?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (settingsOpen) return;
+      const el = document.activeElement;
+      if (isEditableTarget(el) || isInsideDialog(el)) return;
       e.preventDefault();
       programAction(e.key === 'PageDown' ? 'next' : 'prev');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [settingsOpen]);
 
   const toggleViewMode = () => {
     if (streams.length > 0) {
@@ -335,60 +406,98 @@ function App() {
     handleSelectOutput(selectedStream.streamKey);
   };
 
-  // 导播台快捷改分 / 田径跑表
-  const bumpScore = async (side, delta) => {
-    try {
-      const r = await fetch('http://localhost:3001/api/scoreboard');
-      const cfg = await r.json();
-      const key = side === 'home' ? 'homeScore' : 'awayScore';
-      const next = { ...cfg, [key]: Math.max(0, (Number(cfg[key]) || 0) + delta) };
-      await fetch('http://localhost:3001/api/scoreboard', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
-      });
-    } catch (e) {
-      console.error('改分失败', e);
-    }
+  // 导播台快捷改分：本地先加，只 POST 一个字段（不重传照片），并用队列保证连点顺序
+  const bumpScore = (side, delta) => {
+    const key = side === 'home' ? 'home' : 'away';
+    const field = side === 'home' ? 'homeScore' : 'awayScore';
+    scoreRef.current[key] = Math.max(0, (Number(scoreRef.current[key]) || 0) + delta);
+    const value = scoreRef.current[key];
+    const seq = ++scoreSeqRef.current;
+    scoreInflightRef.current += 1;
+
+    // 乐观更新：现场按下去立刻看到数字变化
+    setScoreboard(prev => (prev ? { ...prev, [field]: value } : prev));
+
+    scoreQueueRef.current = scoreQueueRef.current.then(async () => {
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 8000);
+      try {
+        const r = await fetch('http://localhost:3001/api/scoreboard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [field]: value }),
+          signal: ctrl.signal,
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        if (seq === scoreSeqRef.current) {
+          scoreRef.current.home = Number(d.homeScore) || 0;
+          scoreRef.current.away = Number(d.awayScore) || 0;
+          setScoreboard(d);
+        }
+      } catch (e) {
+        if (seq === scoreSeqRef.current) {
+          const reason = e?.name === 'AbortError' ? '请求超时' : (e?.message || '网络错误');
+          showToast('改分失败：' + reason);
+          // 失败后拉回服务端真实比分，别让界面停在一个没存上的数字
+          try {
+            const r = await fetch('http://localhost:3001/api/scoreboard');
+            const d = await r.json();
+            scoreRef.current.home = Number(d.homeScore) || 0;
+            scoreRef.current.away = Number(d.awayScore) || 0;
+            setScoreboard(d);
+          } catch { /* 网络断了，等下次同步 */ }
+        }
+      } finally {
+        clearTimeout(timeout);
+        scoreInflightRef.current = Math.max(0, scoreInflightRef.current - 1);
+      }
+    });
   };
 
   const clockAction = async (action) => {
     try {
-      await fetch('http://localhost:3001/api/scoreboard', {
+      const r = await fetch('http://localhost:3001/api/scoreboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clockAction: action }),
       });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
     } catch (e) {
       console.error('跑表失败', e);
+      showToast('跑表操作失败：' + (e?.message || '网络错误'));
     }
   };
 
   // 节目单：上一项 / 下一项 / 跳到第 N 项（赛程紧凑时一键换项，名册自动就位）
   const programAction = async (action, index) => {
     try {
-      await fetch('http://localhost:3001/api/scoreboard', {
+      const r = await fetch('http://localhost:3001/api/scoreboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
           action === 'apply' ? { programAction: 'apply', programIndex: index } : { programAction: action },
         ),
       });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
     } catch (e) {
       console.error('节目单切换失败', e);
+      showToast('节目单切换失败：' + (e?.message || '网络错误'));
     }
   };
 
   // 选手介绍：上一位 / 下一位 / 上屏 / 隐藏（服务端统一推进，HDMI 与监看同步）
   const introAction = async (action) => {
     try {
-      await fetch('http://localhost:3001/api/scoreboard', {
+      const r = await fetch('http://localhost:3001/api/scoreboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ introAction: action }),
       });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
     } catch (e) {
       console.error('选手介绍切换失败', e);
+      showToast('选手介绍切换失败：' + (e?.message || '网络错误'));
     }
   };
 
@@ -459,15 +568,22 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>🏟 田径赛事导播台</h1>
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">🏟</span>
+          <span className="brand-text">
+            <h1>田径赛事导播台</h1>
+            <span className="brand-sub">LIVE SWITCHER · 多机位实时导播</span>
+          </span>
+        </div>
         <div className="header-controls">
-          <div className="status">
+          <div className={`status ${serverStatus === '已连接' ? 'is-online' : 'is-offline'}`}>
             <span className={`status-indicator ${serverStatus === '已连接' ? 'online' : 'offline'}`}></span>
-            <span>{serverStatus}</span>
-            <span className="stream-count">活跃设备: {streams.length}</span>
+            <span className="status-text">{serverStatus}</span>
+            <span className="status-divider" aria-hidden="true" />
+            <span className="stream-count">活跃设备 {streams.length}</span>
           </div>
           {streams.length > 0 && (
-            <>
+            <div className="header-group">
               <button className="view-mode-btn" onClick={toggleViewMode}>
                 {viewMode === 'single' ? '📺 网格视图' : viewMode === 'grid' ? '🎬 导播台' : '🎯 单屏视图'}
               </button>
@@ -477,31 +593,45 @@ function App() {
                   ▶ TAKE
                 </button>
               )}
-            </>
+            </div>
           )}
-          <button className="view-mode-btn audio-open-btn" onClick={handleOpenAudio}>
-            🎚 音频混音台
-          </button>
-          <button
-            className={`view-mode-btn grade-open-btn ${gradeOn ? 'is-on' : ''}`}
-            onClick={toggleGrade}
-            title={`全局调色：${gradeOn ? '已启用（点击关闭）' : '已关闭（点击启用）'} · 参数在左侧「画面调色」`}
-          >
-            🎨 调色 {gradeOn ? '开' : '关'}
-          </button>
-          <button className="view-mode-btn settings-btn" onClick={handleOpenSettings}
-            title={settingsDetached
-              ? '设置已在独立窗口中打开（点击聚焦该窗口）'
-              : '打开设置弹窗'}>
-            ⚙️ 设置
-          </button>
-          <button
-            className={`view-mode-btn settings-popout-btn ${settingsDetached ? 'is-on' : ''}`}
-            onClick={handleDetachSettings}
-            title="把设置拉出为独立窗口：可拖到第二块屏幕，主窗口继续监看画面（Ctrl+,）"
-          >
-            ⧉ 独立窗口
-          </button>
+          <div className="header-group">
+            <button className="view-mode-btn audio-open-btn" onClick={handleOpenAudio}>
+              🎚 音频混音台
+            </button>
+            <button
+              className="view-mode-btn"
+              onClick={() => {
+                const host = serverInfo?.lanIp || 'localhost';
+                window.open(`http://${host}:3001/console/`, '_blank');
+              }}
+              title="在浏览器打开手机 / 平板控台（需与电脑同一局域网）"
+            >
+              📱 网页控台
+            </button>
+          </div>
+          <div className="header-group">
+            <button
+              className={`view-mode-btn grade-open-btn ${gradeOn ? 'is-on' : ''}`}
+              onClick={toggleGrade}
+              title={`全局调色：${gradeOn ? '已启用（点击关闭）' : '已关闭（点击启用）'} · 参数在左侧「画面调色」`}
+            >
+              🎨 调色 {gradeOn ? '开' : '关'}
+            </button>
+            <button className="view-mode-btn settings-btn" onClick={handleOpenSettings}
+              title={settingsDetached
+                ? '设置已在独立窗口中打开（点击聚焦该窗口）'
+                : '打开设置弹窗'}>
+              ⚙️ 设置
+            </button>
+            <button
+              className={`view-mode-btn settings-popout-btn ${settingsDetached ? 'is-on' : ''}`}
+              onClick={handleDetachSettings}
+              title="把设置拉出为独立窗口：可拖到第二块屏幕，主窗口继续监看画面（Ctrl+,）"
+            >
+              ⧉ 独立窗口
+            </button>
+          </div>
         </div>
       </header>
 
@@ -546,7 +676,12 @@ function App() {
               />
               <LocalMediaPanel
                 localStreams={localStreams}
-                onRemove={(key) => setStreams(s => s.filter(x => x.streamKey !== key))}
+                onRemove={(key) => {
+                  setStreams(s => s.filter(x => x.streamKey !== key));
+                  // 被移除的素材可能正占着预览/输出，立即清掉，别让输出层指向空 key
+                  setSelectedStream(prev => (prev?.streamKey === key ? null : prev));
+                  setOutputStream(prev => (prev === key ? null : prev));
+                }}
                 onSelect={handleStreamSelect}
                 selectedStream={selectedStream}
                 outputStream={outputStream}
@@ -561,6 +696,7 @@ function App() {
               icon="🖥"
               badge={outputStream || '未选'}
               defaultOpen
+              keepMounted
             >
               {outputStream && (
                 <div className="output-info output-info--bar">
@@ -573,6 +709,11 @@ function App() {
                 grade={gradeFor(outputStream)}
                 scoreboard={scoreboard}
                 videoRefsMap={videoRefsMap.current}
+                recordVideoRefsMap={recordRefsMap.current}
+                onRequestProgram={(key) => {
+                  const target = streams.find(s => s.streamKey === key);
+                  if (target) handleStreamSelect(target);
+                }}
               />
             </SidebarSection>
 
@@ -639,19 +780,28 @@ function App() {
                       aria-hidden="true"
                     />
                   )}
-                  {outputStream ? (
-                    (() => {
-                      const pgm = streams.find(s => s.streamKey === outputStream);
-                      return pgm ? (
-                        <VideoPlayer stream={pgm} compact={false} program grade={gradeFor(pgm.streamKey)}
-                          onVideoReady={handleVideoReady} onVideoUnmount={handleVideoUnmount} />
-                      ) : (
-                        <div className="director-empty">等待 {outputStream}</div>
+                  {(() => {
+                    // PGM 池：当前输出 + 预览都保持挂载，切换时只切显隐，不重建播放器。
+                    // 预览这一路在后台静音预热，TAKE 时立刻出画（关键帧已经拿到）。
+                    const keys = [];
+                    if (outputStream) keys.push(outputStream);
+                    const pv = selectedStream?.streamKey;
+                    if (pv && !keys.includes(pv)) keys.push(pv);
+                    if (!keys.length) return <div className="director-empty">未设置输出</div>;
+                    return keys.map((k) => {
+                      const st = streams.find(s => s.streamKey === k);
+                      const active = k === outputStream;
+                      if (!st) {
+                        return active ? <div key={k} className="director-empty">等待 {k}</div> : null;
+                      }
+                      return (
+                        <div key={k} className={`pgm-layer ${active ? 'pgm-layer-on' : 'pgm-layer-off'}`}>
+                          <VideoPlayer stream={st} compact={false} program preload={!active}
+                            grade={gradeFor(k)} />
+                        </div>
                       );
-                    })()
-                  ) : (
-                    <div className="director-empty">未设置输出</div>
-                  )}
+                    });
+                  })()}
                 </div>
                 <div className="director-monitor director-pvw">
                   <div className="director-monitor-label pvw">PVW · 预览</div>
@@ -816,11 +966,17 @@ function App() {
           ) : (
             <div className="no-stream">
               <div className="placeholder">
+                <div className="placeholder-icon" aria-hidden="true">🎥</div>
                 <h2>请选择一个摄影设备</h2>
-                <p>从左侧列表中选择要观看的设备</p>
+                <p>从左侧「信号源」选择要监看的画面，或直接按数字键切换</p>
+                <div className="placeholder-keys" aria-hidden="true">
+                  <span><kbd>1</kbd>–<kbd>9</kbd> 选画面</span>
+                  <span><kbd>Shift</kbd> + <kbd>数字</kbd> 切输出</span>
+                  <span><kbd>Enter</kbd> TAKE</span>
+                </div>
                 {streams.length > 1 && (
                   <button className="grid-view-hint" onClick={toggleViewMode}>
-                    或点击切换到网格视图同时观看所有设备
+                    切换到网格视图，同时监看所有设备 →
                   </button>
                 )}
               </div>
@@ -829,9 +985,22 @@ function App() {
         </main>
       </div>
 
+      {/* 录制专用隐藏源：始终挂载输出流，录制时不必切走导播预览 */}
+      <RecordSource
+        streamKey={outputStream}
+        stream={streams.find(s => s.streamKey === outputStream)}
+        onReady={handleRecordVideoReady}
+        onUnmount={handleRecordVideoUnmount}
+      />
+
       {/* 导播台已有大 PGM 监看，隐藏右下角浮窗避免重复 */}
       {viewMode !== 'director' && (
         <OutputMonitor streamKey={outputStream} streams={streams} grade={gradeFor(outputStream)} />
+      )}
+      {toast && (
+        <div className={`app-toast app-toast--${toast.tone || 'error'}`} role="status">
+          {toast.text}
+        </div>
       )}
       <SettingsModal
         open={settingsOpen}

@@ -1,3 +1,33 @@
+:root {
+  /* ─── 配色 ─── */
+  --bg: #06070a;
+  --bg-soft: #0b0d12;
+  --surface: rgba(18, 21, 28, 0.72);
+  --surface-strong: rgba(24, 27, 35, 0.94);
+  --surface-hover: rgba(255, 255, 255, 0.06);
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.13);
+  --text: rgba(255, 255, 255, 0.92);
+  --text-soft: rgba(255, 255, 255, 0.66);
+  --text-dim: #7d8492;
+  --accent: #3b82f6;
+  --accent-soft: rgba(59, 130, 246, 0.16);
+  --accent-line: rgba(96, 165, 250, 0.42);
+  --live: #ff453a;
+  --program: #ef4444;
+  --preview: #22c55e;
+  --warn: #f59e0b;
+
+  /* ─── 形状 / 层次 ─── */
+  --r-sm: 7px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-2: 0 8px 28px rgba(0, 0, 0, 0.32);
+  --shadow-3: 0 20px 60px rgba(0, 0, 0, 0.5);
+  --ease: cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -12,11 +42,36 @@ body {
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue',
-    'PingFang SC', 'Hiragino Sans GB', sans-serif;
-  background: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%);
-  color: rgba(255, 255, 255, 0.92);
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background:
+    radial-gradient(1100px 520px at 12% -12%, rgba(59, 130, 246, 0.1), transparent 62%),
+    radial-gradient(900px 480px at 88% -18%, rgba(139, 92, 246, 0.08), transparent 60%),
+    var(--bg);
+  color: var(--text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: rgba(59, 130, 246, 0.35);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.75);
+  outline-offset: 2px;
 }
 
 #root {

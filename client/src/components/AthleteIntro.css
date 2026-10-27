@@ -59,10 +59,12 @@
   background: linear-gradient(145deg, #2b3446, #171d29);
 }
 
-/* 默认队徽是方形图案：整幅 contain 别把外圈裁掉，留一圈暗底衬托 */
+/* 默认队徽是方形图案：整幅 contain 别把外圈裁掉，留一圈暗底衬托。
+   注意 padding 不能用百分比：百分比按「包含块宽度」解析，字幕条很宽时
+   上下 padding 会大于图片高度，内容盒被压成 0，队徽直接消失。 */
 .intro-photo--default {
   object-fit: contain;
-  padding: 6%;
+  padding: 0.6cqh;
   background: radial-gradient(circle at 50% 44%, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03) 72%);
 }
 

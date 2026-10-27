@@ -7,6 +7,7 @@ const dgram = require('dgram');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const timing = require('./timing');
 const codecSniffer = require('./codec');
 const hevcFix = require('./hevc-fix');
@@ -130,6 +131,14 @@ function installBroadcastHook(path, broadcast) {
   const stat = { calls: 0, bytes: 0, rateKbps: 0, windowBytes: 0, windowStart: 0 };
   broadcastStats.set(path, stat);
 
+  // 转码子流：postPublish 只代表 ffmpeg 连上了，必须等第一帧视频才算真正 ready。
+  // 否则源流 NAL 损坏时，前端会切到一条永远没有画面的子流，显示 0 fps/0 kbps。
+  const pathKey = String(path || '').replace(/^\/+/, '');
+  const isTranscodeChild = Boolean(TRANSCODE_SUFFIX) && pathKey.endsWith(TRANSCODE_SUFFIX);
+  const transcodeParentKey = isTranscodeChild
+    ? pathKey.slice(0, -TRANSCODE_SUFFIX.length)
+    : '';
+
   // 老式 FLV HEVC（codec id 12、无 sequence header）就地改写成标准 enhanced hvc1，
   // 否则 ffmpeg / flv.js 连分辨率都读不出来，转码直接失败。
   if (!broadcast.__hevcFixer__) broadcast.__hevcFixer__ = hevcFix.createFixer();
@@ -137,6 +146,13 @@ function installBroadcastHook(path, broadcast) {
 
   broadcast.broadcastMessage = (packet) => {
     stat.calls++;
+    stat.lastPacketAt = Date.now();
+    // 视频/关键帧分别记时间：只发音频或只发 P 帧的摄像机也算“没画面”，
+    // 前端会一直等关键帧，看门狗和日志要能区分出来。
+    if (packet?.codec_type === 9) {
+      stat.lastVideoAt = stat.lastPacketAt;
+      if (packet.flags === 3) stat.lastKeyAt = stat.lastPacketAt;
+    }
     const len = packet?.data?.length || 0;
     stat.bytes += len;
     stat.subs = broadcast.subscribers.size;
@@ -170,7 +186,23 @@ function installBroadcastHook(path, broadcast) {
     } catch (e) {
       logger.verbose('[编码嗅探] 解析失败', e.message);
     }
-    return orig(packet);
+
+    // 子流关键帧 → 把父流标记为「转码就绪」。只等「有视频包」不够：P 帧先到时
+    // 前端连上去仍要等下一个关键帧（黑屏几秒）。这里不做“只处理第一帧”的记忆，
+    // 每个关键帧都尝试一次，由 onOutputReady 内部判断是否还是 pending —— 这样
+    // 子流重连、转码重启都不会被历史状态卡住。
+    if (isTranscodeChild && packet?.codec_type === 9 && packet.flags === 3) {
+      if (transcode.onOutputReady(transcodeParentKey, pathKey)) {
+        logger.info(`[转码] 子流首帧（关键帧）已到达: ${pathKey} → 父流 ${transcodeParentKey}`);
+      }
+    }
+
+    const ret = orig(packet);
+    // GOP 缓存现在用于新播放器秒开；异常流（长时间不出关键帧）要限制内存，
+    // 900 帧约等于 30 秒，正常 1~5 秒 GOP 远远到不了。
+    if (broadcast.flvGopCache && broadcast.flvGopCache.size > 900) broadcast.flvGopCache.clear();
+    if (broadcast.rtmpGopCache && broadcast.rtmpGopCache.size > 900) broadcast.rtmpGopCache.clear();
+    return ret;
   };
   broadcast.__patched__ = true;
   logger.verbose(`已挂钩 broadcast ${path}`);
@@ -182,6 +214,9 @@ setInterval(() => {
   }
   for (const session of NmsContext.sessions.values()) {
     if (session.protocol === 'rtmp' && session.rtmp && !session.__patchedRtmp__) {
+      // 建连后 200ms 内就挂上 ping 回应，不等 publish 命令；
+      // 有些摄像机在 connect 阶段就开始发心跳。
+      patchRtmpPing(session, logger);
       const origCb = session.rtmp.onPacketCallback;
       let pktCount = 0;
       let pktBytes = 0;
@@ -230,12 +265,20 @@ const nmsConfig = {
     chunk_size: 2048,  // 更小 chunk，降低分片延迟（体育赛事低延迟）
     gop_cache: false,  // 禁用 GOP 缓存
     ping: 30,
-    ping_timeout: 60
+    // 60 秒太紧：手机 Wi-Fi 短暂休眠/漫游时 pong 会晚到，NMS 会直接掐断 TCP，
+    // 现场表现就是“推了一会儿自己掉”。放宽到 120 秒，卡死由上面的无数据看门狗兜底。
+    ping_timeout: 120
   },
   http: { 
     port: FLV_PORT,
     allow_origin: '*',
     mediaroot: './media'
+  },
+  // 手机 App 分发：把 APK 放在 public/dl，走已放行的 8000 端口下载，
+  // 不用再插 USB / 拷文件。地址：http://<本机IP>:8000/dl/camsender-1.0.1.apk
+  static: {
+    router: '/dl',
+    root: path.join(__dirname, '..', 'public', 'dl'),
   },
   auth: { play: false, publish: false },
   // 传输配置优化
@@ -247,41 +290,67 @@ const nmsConfig = {
 
 const nms = new NodeMediaServer(nmsConfig);
 
-// 低延迟：为每个新建的 BroadcastServer 重写 postPlay，跳过 GOP 缓存重放
-const patchBroadcastsLowLatency = () => {
-  for (const [path, broadcast] of NmsContext.broadcasts.entries()) {
-    if (broadcast.__lowLatencyPatched__) continue;
-    const origPostPlay = broadcast.postPlay;
-    broadcast.postPlay = (session) => {
-      const flvGop = broadcast.flvGopCache;
-      const rtmpGop = broadcast.rtmpGopCache;
-      broadcast.flvGopCache = null;
-      broadcast.rtmpGopCache = null;
-      try {
-        return origPostPlay(session);
-      } finally {
-        broadcast.flvGopCache = flvGop;
-        broadcast.rtmpGopCache = rtmpGop;
-      }
-    };
-    broadcast.__lowLatencyPatched__ = true;
-    logger.verbose(`[低延迟] 已禁用 ${path} 的 GOP 缓存重放`);
-  }
-};
-setInterval(patchBroadcastsLowLatency, 200);
+// 低延迟：曾经在这里把 postPlay 的 GOP 缓存重放整个跳过。
+// 代价是每个新播放器（尤其是切镜头时新建的那一路）必须等下一个关键帧，
+// 1080p/1 秒 GOP 就是约 1 秒黑屏。切换画面不黑屏比这 1 秒启动延迟重要：
+// 恢复 NMS 默认行为，新播放器先收到「最近一个关键帧 + 该 GOP」立刻出画，
+// 客户端 startCatchUp 会在缓冲超过阈值后自动追到直播点。
 
 // Express 应用
 const app = express();
 app.use(cors());
-app.use(express.json());
+// 名册照片 / 水印图片 / 整份配置都会走 JSON；默认 100 kB 在现场很容易 413
+app.use(express.json({ limit: '8mb' }));
 
 // ─── 静态页面：计时老师手机录入页 /timer/ · 裁判长监控页 /timer/monitor.html ───
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
-app.use('/timer', express.static(path.join(PUBLIC_DIR, 'timer'), {
+const TIMER_DIR = path.join(PUBLIC_DIR, 'timer');
+const CONSOLE_DIR = path.join(PUBLIC_DIR, 'console');
+const RESULTS_DIR = path.join(PUBLIC_DIR, 'results');
+
+app.use('/timer', express.static(TIMER_DIR, {
   index: 'index.html',
   extensions: ['html'],
 }));
-app.get('/timer', (req, res) => res.redirect('/timer/'));
+// 注意：Express 默认非严格路由，'/timer' 也会匹配 '/timer/'。
+// 用一条路由分别处理，避免静态目录缺失时 '/timer/' → '/timer' → '/timer/' 无限重定向。
+app.get(['/timer', '/timer/'], (req, res) => {
+  if (!req.path.endsWith('/')) return res.redirect('/timer/');
+  const file = path.join(TIMER_DIR, 'index.html');
+  if (!fs.existsSync(file)) {
+    return res.status(404).type('text/plain; charset=utf-8').send('计时录入页未随安装包发布');
+  }
+  res.sendFile(file);
+});
+
+// ─── 网页控台：手机 / 平板 / 另一台电脑用浏览器打开 ───────────────────────────
+app.use('/console', express.static(CONSOLE_DIR, {
+  index: 'index.html',
+  extensions: ['html'],
+}));
+app.get(['/console', '/console/'], (req, res) => {
+  if (!req.path.endsWith('/')) return res.redirect('/console/');
+  const file = path.join(CONSOLE_DIR, 'index.html');
+  if (!fs.existsSync(file)) {
+    return res.status(404).type('text/plain; charset=utf-8').send('网页控台未随安装包发布');
+  }
+  res.sendFile(file);
+});
+
+// ─── 成绩公示：场内大屏 / 家长手机扫码查看，只读、不暴露任何主控操作 ─────────
+app.use('/results', express.static(RESULTS_DIR, {
+  index: 'index.html',
+  extensions: ['html'],
+}));
+app.get(['/results', '/results/'], (req, res) => {
+  if (!req.path.endsWith('/')) return res.redirect('/results/');
+  const file = path.join(RESULTS_DIR, 'index.html');
+  if (!fs.existsSync(file)) {
+    return res.status(404).type('text/plain; charset=utf-8').send('成绩公示页未随安装包发布');
+  }
+  res.sendFile(file);
+});
+app.get('/', (req, res) => res.redirect('/console/'));
 
 const server = http.createServer(app);
 const io = socketIo(server, {
@@ -289,21 +358,40 @@ const io = socketIo(server, {
 });
 
 const activeStreams = new Map();
+// 自动重试转码的冷却时间（按机位记；不要塞进 stream 对象，否则会被原样下发到前端）
+const transcodeRetryAt = new Map();
+// 连续失败次数：到上限就不再自动重试，避免“一直转码中”的死循环
+const transcodeFailCount = new Map();
+// 关键帧告警的冷却时间（按机位记）
+const keyframeWarnAt = new Map();
 let selectedOutputStream = null;
+// 主控当前预览(PVW)的一路：输出/HDMI 窗口用它提前预热，TAKE 时不黑屏
+let previewStreamKey = null;
 
 // ─── 服务端实时转码 ─────────────────────────────────────────────────────────
 // 把 HEVC/VP9/AV1 这类浏览器放不了的编码实时转成 H.264，再推回本机 NMS。
 // 默认开启；设 TRANSCODE_DISABLED=1 可关掉（这种情况只能靠推流端改 H.264）。
 const TRANSCODE_DISABLED = process.env.TRANSCODE_DISABLED === '1';
 const transcode = new TranscodeManager({ rtmpHost: '127.0.0.1', rtmpPort: RTMP_PORT });
+// 启动时就把 GPU 编码器探测好，避免第一路 HEVC 推流还要多等几秒
+if (!TRANSCODE_DISABLED) void transcode.probeHw();
 
 // 转码状态变化 → 同步到对应机位对象并推给前端
 transcode.on('update', (parentKey, info) => {
   const stream = activeStreams.get(parentKey);
   if (!stream) return; // 父流已下线，忽略
+  if (info.status === 'error') {
+    transcodeFailCount.set(parentKey, (transcodeFailCount.get(parentKey) || 0) + 1);
+  } else if (info.status === 'ready') {
+    transcodeFailCount.delete(parentKey);
+  }
   stream.transcodeStatus = info.status;          // pending | ready | stopped | error
-  stream.transcodedStreamKey = info.childKey || null;
-  stream.transcodedFlvPath = info.childKey ? `/${info.childKey}.flv` : null;
+  stream.transcodeMode = info.mode || '';        // hw | sw
+  stream.transcodeError = info.status === 'error' ? String(info.error || '未知错误') : '';
+  // 只有 ready 才暴露子流地址；error/stopped 时前端不能再去连一条已经没画面的流
+  const ready = info.status === 'ready' && info.childKey;
+  stream.transcodedStreamKey = ready ? info.childKey : null;
+  stream.transcodedFlvPath = ready ? `/${info.childKey}.flv` : null;
   emitStreamUpdate();
 });
 
@@ -409,12 +497,29 @@ let scoreboardConfig = {
   // —— 节目单：整场预载名册，现场一键切项 ——
   program: [],         // [{ id, label, time, eventName, category, round, heat, eventKind, athletes }]
   programIndex: 0,     // 当前应用到第几节
+  // 节目单刚载入、还没应用过任何一节时为 false：
+  // 此时叠加层里仍是旧项目，切项时不能把旧项目快照回新节目单（会污染第 1 节）。
+  programSynced: false,
+  // —— 全屏成绩公示：每个项目结束后自动盖满 PGM / HDMI / 录像画面 ——
+  fullResultsAuto: true,      // 按「下一项 / 上一项」时自动上屏
+  fullResultsDuration: 12,    // 自动隐藏秒数，0 = 常显（手动关）
+  fullResultsVisible: false,  // 运行时状态，不跨重启
+  fullResultsHideAt: 0,       // 自动隐藏时间戳（0 = 不自动隐藏）
+  fullResultsSnapshot: null,  // 当前公示的项目成绩快照
 };
 
 if (fsScore?.fs.existsSync(fsScore.path)) {
   try {
     const raw = JSON.parse(fsScore.fs.readFileSync(fsScore.path, 'utf8'));
-    scoreboardConfig = { ...scoreboardConfig, ...raw, clockRunning: false, clockStartAt: null };
+    scoreboardConfig = {
+      ...scoreboardConfig,
+      ...raw,
+      clockRunning: false,
+      clockStartAt: null,
+      // 全屏成绩是一次性的现场状态，重启后不要又把旧成绩盖在画面上
+      fullResultsVisible: false,
+      fullResultsHideAt: 0,
+    };
     logger.info('[田径] 已加载 scoreboard.json');
   } catch (e) {
     logger.warn('[田径] scoreboard.json 加载失败', e.message);
@@ -431,6 +536,8 @@ function persistScoreboard() {
       clockOffsetMs: scoreboardConfig.clockRunning
         ? currentClockMs(scoreboardConfig)
         : scoreboardConfig.clockOffsetMs,
+      fullResultsVisible: false,
+      fullResultsHideAt: 0,
     };
     fsScore.fs.writeFileSync(fsScore.path, JSON.stringify(toSave, null, 2), 'utf8');
   } catch (e) {
@@ -566,9 +673,15 @@ function getVideoCodecLabel(videoCodec) {
   return String(videoCodec);
 }
 
-function isBrowserPlayableVideoCodec(videoCodec) {
+function isBrowserPlayableVideoCodec(videoCodec, diag = {}) {
   const label = getVideoCodecLabel(videoCodec);
-  return label === 'unknown' || label === 'H.264';
+  if (label === 'unknown') return true;
+  if (label !== 'H.264') return false;
+  // 浏览器/flv.js 只能稳定解 8-bit 4:2:0 的 H.264；
+  // High10 / 4:2:2 / 4:4:4 必须走转码，否则会黑屏但编码 ID 仍是 7。
+  const bitDepth = Number(diag.videoBitDepth) || 8;
+  const chroma = Number(diag.videoChromaFormat) || 1;
+  return bitDepth <= 8 && chroma === 1;
 }
 
 function getStreamDiagnostics(streamPath = '') {
@@ -585,16 +698,35 @@ function getStreamDiagnostics(streamPath = '') {
   const hasMetaVideo = metaVideoCodec != null && metaVideoCodec !== '' && metaVideoCodec !== 0;
   const videoCodec = sniffed.videoCodec ?? (hasMetaVideo ? metaVideoCodec : null);
   const audioCodec = sniffed.audioCodec ?? (publisher?.audioCodec || null);
+  const audioFourCC = sniffed.audioFourCC || '';
+  // flv.js 只稳定支持 FLV 原生 AAC / MP3；enhanced Opus/FLAC 等要转 AAC
+  const audioPlayable = !audioFourCC;
+  const audioCodecLabel = audioFourCC === 'opus' ? 'Opus'
+    : audioFourCC === 'flac' ? 'FLAC'
+      : audioCodec === 10 ? 'AAC'
+        : audioCodec === 2 ? 'MP3'
+          : audioCodec ? `Audio ${audioCodec}` : '';
+  const videoBitDepth = sniffed.videoBitDepth || 0;
+  const videoChromaFormat = sniffed.videoChromaFormat || 0;
+  const baseLabel = getVideoCodecLabel(videoCodec);
+  const videoCodecLabel = baseLabel === 'H.264' && videoBitDepth > 8
+    ? `H.264 ${videoBitDepth}-bit`
+    : baseLabel;
 
   return {
     videoCodec,
-    videoCodecLabel: getVideoCodecLabel(videoCodec),
-    browserPlayable: isBrowserPlayableVideoCodec(videoCodec),
+    videoCodecLabel,
+    videoBitDepth,
+    videoChromaFormat,
+    browserPlayable: isBrowserPlayableVideoCodec(videoCodec, { videoBitDepth, videoChromaFormat }),
     videoWidth: publisher?.videoWidth || sniffed.videoWidth || fixerDims?.width || 0,
     videoHeight: publisher?.videoHeight || sniffed.videoHeight || fixerDims?.height || 0,
     videoFramerate: publisher?.videoFramerate || sniffed.videoFramerate || 0,
     videoDatarate: publisher?.videoDatarate || stat.rateKbps || 0,
     audioCodec,
+    audioCodecLabel,
+    audioFourCC,
+    audioPlayable,
     audioChannels: publisher?.audioChannels || 0,
     audioSamplerate: publisher?.audioSamplerate || 0,
   };
@@ -626,8 +758,15 @@ function getStreamMeta(streamPath = '') {
 }
 
 // RTMP 事件监听
+// ─── 摄像机 RTMP 心跳回应 ───────────────────────────────────────────────────
+// NMS v4 的 eventHandler 是空函数：摄像机发 User Control PingRequest 时它不回
+// PingResponse，不少硬件编码器会按自身超时（常见 1~3 分钟）主动断流。
+// 具体实现见 server/rtmp-ping.js。
+const { patchRtmpPing } = require('./rtmp-ping');
+
 nms.on('prePublish', (session) => {
   logger.verbose(`[prePublish] id=${session.id} streamPath=${session.streamPath}`);
+  patchRtmpPing(session, logger);
 });
 
 nms.on('postPublish', (session) => {
@@ -635,15 +774,73 @@ nms.on('postPublish', (session) => {
   const { streamKey, streamPath, flvPath } = getStreamMeta(rawStreamPath);
   logger.info(`[postPublish] id=${session.id} streamPath=${rawStreamPath} normalized=${streamPath}`);
 
+  // NMS 在「同一 streamKey 已有 publisher」时也会先触发 postPublish，再报错关闭新会话。
+  // 不能让这个被拒绝的会话覆盖已有流/转码状态，否则机位会从「GPU 转码」变回「编码不兼容」。
+  const broadcast = NmsContext.broadcasts.get(streamPath);
+  const livePublisher = broadcast?.publisher;
+  const existing = activeStreams.get(streamKey);
+  if (existing) {
+    // 用广播层最后一次真实收包时间判断，不能只看 activeStreams.lastPacketAt：
+    // 那个字段只在建流/状态翻转时写，健康推流跑过 15 秒后会被误判成「无数据」。
+    const stat = broadcastStats.get(streamPath);
+    const lastPacketAt = Number(stat?.lastPacketAt)
+      || Number(existing.lastPacketAt)
+      || new Date(existing.startTime).getTime()
+      || 0;
+    const stale = lastPacketAt > 0 && Date.now() - lastPacketAt > 15000;
+    // 只有 activeStreams 里记的会话确实是当前 publisher 时才算「真重复」。
+    // 被 NMS 拒绝的会话会留下幽灵条目，必须允许新会话接管，否则真实推流被永久挡住。
+    const isHealthyLive = Boolean(livePublisher) && !stale;
+    if (isHealthyLive) {
+      if (existing.id === livePublisher.id) {
+        logger.warn(`[postPublish] ${streamKey} 已有推流，忽略重复会话 ${session.id}`);
+        return;
+      }
+      // 机位表记的会话和真实推流对不上（历史遗留的幽灵条目）：
+      // 以真实推流为准，只把表校正回来，绝不能踢掉正在健康出图的那一路
+      logger.warn(`[postPublish] ${streamKey} 校正机位表：${existing.id} → ${livePublisher.id}，忽略重复会话 ${session.id}`);
+      existing.id = livePublisher.id;
+      existing.lastPacketAt = Number(stat?.lastPacketAt) || existing.lastPacketAt;
+      existing.status = 'online';
+      Object.assign(existing, getStreamDiagnostics(streamPath));
+      emitStreamUpdate();
+      return;
+    }
+    logger.warn(`[postPublish] ${streamKey} ${stale ? '旧推流 15 秒无数据' : `会话 ${existing.id} 已失效`}，按新会话 ${session.id} 接管`);
+    try {
+      // 关键：NMS 是在本回调返回之后才检查 broadcast.publisher 是否为空的。
+      // 只 close 旧会话是异步的，检查那一刻旧 publisher 还在 → 新会话必被
+      // “already has a publisher” 拒绝，于是形成永久踢人循环。这里必须先同步摘掉。
+      if (broadcast?.publisher && broadcast.publisher.id !== session.id) {
+        const stalePublisher = broadcast.publisher;
+        broadcast.publisher = null;
+        // 旧流的 metadata / 编码头必须一起清掉：新流可能是 HEVC，而中途接进来的
+        // 播放器会先收到广播里残留的上一条 H.264 sequence header，直接解不出来。
+        broadcast.rtmpMetaData = null;
+        broadcast.rtmpVideoHeader = null;
+        broadcast.rtmpAudioHeader = null;
+        broadcast.flvMetaData = null;
+        broadcast.flvVideoHeader = null;
+        broadcast.flvAudioHeader = null;
+        broadcast.flvGopCache?.clear?.();
+        broadcast.rtmpGopCache?.clear?.();
+        stalePublisher.close?.();
+      }
+    } catch { /* 已断开 */ }
+    activeStreams.delete(streamKey);
+    transcode.stop(streamKey);
+  }
+
   bitstreamInfo.delete(streamPath); // 丢掉上一次推流残留的嗅探结果
+  transcodeFailCount.delete(streamKey); // 新推流重新给 3 次转码机会
+  transcodeRetryAt.delete(streamKey);
   // 立刻挂钩，抢在推流端发 metadata / AVC sequence header 之前（轮询挂钩会漏包）
   installBroadcastHook(streamPath, NmsContext.broadcasts.get(streamPath));
 
-  // 转码子流（_h264 结尾）：不进机位列表，只负责把"已就绪"状态回传给父流
+  // 转码子流（_h264 结尾）：不进机位列表，等广播钩子看到关键帧后再回传 ready
   if (TRANSCODE_SUFFIX && streamKey.endsWith(TRANSCODE_SUFFIX)) {
     const parentKey = streamKey.slice(0, -TRANSCODE_SUFFIX.length);
-    transcode.onOutputReady(parentKey, streamKey);
-    logger.info(`[转码] 子流已就绪: ${streamKey} → 父流 ${parentKey}`);
+    logger.info(`[转码] 子流已连接，等待首帧: ${streamKey} → 父流 ${parentKey}`);
     return;
   }
 
@@ -653,6 +850,7 @@ nms.on('postPublish', (session) => {
     streamPath,
     flvPath,
     startTime: new Date(),
+    lastPacketAt: Date.now(),
     status: 'online',
     transcodeStatus: null, // pending | ready | stopped | error（由 transcode 事件异步填充）
     ...getStreamDiagnostics(streamPath)
@@ -669,9 +867,15 @@ nms.on('postPublish', (session) => {
       if (!stream) return; // 已经下线
       const diag = getStreamDiagnostics(streamPath);
       Object.assign(stream, diag); // 刷新一次编码/分辨率
-      if (!diag.browserPlayable) {
-        logger.info(`[转码] ${streamKey} 编码 ${diag.videoCodecLabel} 浏览器放不了，启动实时转码 → ${streamKey}${TRANSCODE_SUFFIX}`);
-        transcode.maybeStart(streamKey, { browserPlayable: false });
+      if (!diag.browserPlayable || !diag.audioPlayable) {
+        const audioOnly = diag.browserPlayable && !diag.audioPlayable;
+        logger.info(`[转码] ${streamKey} ${audioOnly
+          ? `音频 ${diag.audioCodecLabel || '不兼容'} 需要转 AAC`
+          : `编码 ${diag.videoCodecLabel} 浏览器放不了`}，启动实时转码 → ${streamKey}${TRANSCODE_SUFFIX}`);
+        transcode.maybeStart(streamKey, {
+          browserPlayable: diag.browserPlayable,
+          audioOnly,
+        });
       }
     }, 2000);
   }
@@ -688,7 +892,17 @@ nms.on('donePublish', (session) => {
     return;
   }
 
+  // 被 NMS 拒绝的重复会话关闭时不要误删当前正在推的那一路
+  const existing = activeStreams.get(streamKey);
+  if (existing && existing.id !== session.id) {
+    logger.warn(`[donePublish] 忽略过期会话 ${session.id}（当前 ${existing.id}）`);
+    return;
+  }
+
   activeStreams.delete(streamKey);
+  transcodeRetryAt.delete(streamKey);
+  transcodeFailCount.delete(streamKey);
+  keyframeWarnAt.delete(streamKey);
   bitstreamInfo.delete(streamPath);
   transcode.stop(streamKey); // 源流停了，杀掉转码进程
 
@@ -702,6 +916,7 @@ nms.on('donePublish', (session) => {
 
 nms.on('prePlay', (session) => {
   logger.verbose(`[prePlay] id=${session.id} streamPath=${session.streamPath}`);
+  patchRtmpPing(session, logger);
 });
 
 nms.on('postPlay', (session) => {
@@ -730,6 +945,67 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', activeStreams: activeStreams.size });
 });
 
+// ─── 赛事预设（data/meets/*.json）：秩序册赛程 + 节目单一键载入 ───────────────
+const MEETS_DIR = (() => {
+  const fromCwd = path.join(process.cwd(), 'data', 'meets');
+  if (fs.existsSync(fromCwd)) return fromCwd;
+  return path.join(__dirname, '..', 'data', 'meets');
+})();
+
+function readMeetFile(file) {
+  const safe = path.basename(String(file || ''));
+  if (!/^[\w.-]+\.json$/.test(safe)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(path.join(MEETS_DIR, safe), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function listPresetMeets() {
+  try {
+    return fs.readdirSync(MEETS_DIR)
+      .filter((f) => f.endsWith('.json') && !f.endsWith('-program.json'))
+      .map((f) => readMeetFile(f))
+      .filter((m) => m && m.id && m.name)
+      .map((m) => ({
+        id: m.id,
+        name: m.name,
+        shortName: m.shortName || m.name,
+        school: m.school || '',
+        edition: m.edition || '',
+        dateRange: m.dateRange || '',
+        venue: m.venue || '',
+        sessions: m.sessions || [],
+        stats: m.stats || null,
+        notes: m.notes || [],
+      }));
+  } catch {
+    return [];
+  }
+}
+
+app.get('/api/meets', (req, res) => {
+  res.json(listPresetMeets());
+});
+
+app.get('/api/meets/:id', (req, res) => {
+  const meet = listPresetMeets().find((m) => m.id === req.params.id);
+  if (!meet) return res.status(404).json({ error: 'meet not found' });
+  const full = readMeetFile(`${req.params.id}.json`);
+  if (!full) return res.status(404).json({ error: 'meet file missing' });
+  res.json(full);
+});
+
+app.get('/api/meets/:id/program', (req, res) => {
+  const full = readMeetFile(`${req.params.id}.json`);
+  if (!full) return res.status(404).json({ error: 'meet not found' });
+  const programFile = full.programFile || `${full.id}-program.json`;
+  const program = readMeetFile(programFile);
+  if (!Array.isArray(program)) return res.status(404).json({ error: 'program file missing' });
+  res.json({ id: full.id, name: full.name, program: normProgram(program) });
+});
+
 app.get('/api/server-info', async (req, res) => {
   const info = await getLanInfo();
   res.json({
@@ -743,7 +1019,7 @@ app.get('/api/server-info', async (req, res) => {
 });
 
 app.get('/api/output', (req, res) => {
-  res.json({ selectedStream: selectedOutputStream });
+  res.json({ selectedStream: selectedOutputStream, previewStream: previewStreamKey });
 });
 
 // 转场预设
@@ -849,10 +1125,18 @@ app.patch('/api/local/:key(*)', (req, res) => {
 
 // 移除本地文件虚拟流
 app.delete('/api/local/:key(*)', (req, res) => {
-  const key = req.params.key;
-  localFiles.delete(key);
+  const raw = req.params.key;
+  const key = raw.startsWith('local/') ? raw : 'local/' + raw;
+  if (!localFiles.delete(key)) {
+    return res.status(404).json({ success: false, error: 'not found' });
+  }
+  // 正在输出的素材被删掉时，别让输出层继续指向一个已经不存在的 key
+  if (selectedOutputStream === key) {
+    selectedOutputStream = null;
+    io.emit('outputSelected', { streamKey: null });
+  }
   io.emit('streamUpdate', [...Array.from(activeStreams.values()), ...Array.from(localFiles.values())]);
-  res.json({ success: true });
+  res.json({ success: true, streamKey: key });
 });
 
 // HTTP 代理：将本地文件以 HTTP range 方式提供给渲染进程
@@ -901,6 +1185,73 @@ app.get('/api/local/stream/:key(*)', (req, res) => {
 app.get('/api/local/list', (req, res) => {
   res.json(Array.from(localFiles.values()));
 });
+
+// ─── 推流无数据看门狗 ─────────────────────────────────────────────────────────
+// RTMP 会话可能还连着，但手机/相机已经不再发帧（切后台、锁屏、编码器卡死）。
+// 12 秒没有任何 packet 就标记 stalled，前端显示「无画面」。
+// 关键：只标记、不立刻断开。现场 Wi-Fi 抖动/手机休眠很常见，12 秒就杀会话会
+// 逼手机整条重连（还要经历 NMS 的 publisher 抢占），表现就是“推流一会儿自己掉”。
+// 给 60 秒恢复窗口：手机醒了继续用原会话，真死了才断开。
+const STALL_MARK_MS = 12000;
+const STALL_CLOSE_MS = 60000;
+setInterval(() => {
+  let changed = false;
+  for (const [key, stream] of activeStreams) {
+    const stat = broadcastStats.get(stream.streamPath);
+    const last = Number(stat?.lastPacketAt) || Number(stream.lastPacketAt)
+      || new Date(stream.startTime).getTime() || 0;
+    const idle = Date.now() - last;
+    if (idle > STALL_MARK_MS && stream.status !== 'stalled') {
+      stream.status = 'stalled';
+      stream.lastPacketAt = last;
+      changed = true;
+      logger.warn(`[流] ${key} 已 ${Math.round(idle / 1000)} 秒没有数据，标记为无画面（${Math.round(STALL_CLOSE_MS / 1000)} 秒内恢复会自动继续）`);
+    } else if (idle < 5000 && stream.status === 'stalled') {
+      stream.status = 'online';
+      stream.lastPacketAt = last;
+      changed = true;
+      logger.info(`[流] ${key} 数据已恢复，继续使用原会话`);
+    }
+
+    // 长时间真死才断开，给手机留出休眠/漫游后的恢复窗口
+    if (idle > STALL_CLOSE_MS && stream.status === 'stalled') {
+      stream.lastPacketAt = last;
+      logger.warn(`[流] ${key} 已 ${Math.round(idle / 1000)} 秒没有数据，断开旧会话等手机重连`);
+      transcode.stop(key);
+      try {
+        const stale = [...NmsContext.sessions.values()].find(s => s.id === stream.id);
+        stale?.close?.();
+      } catch { /* 已断开 */ }
+    }
+
+    // 摄像机在出视频、但长时间没有关键帧：播放器会一直“等待关键帧”。
+    // 这不是服务端能补的，必须让摄像机把 I 帧间隔调短；先给出明确告警。
+    if (stream.status === 'online' && stat?.lastVideoAt && Date.now() - stat.lastVideoAt < 5000) {
+      const lastKey = Number(stat.lastKeyAt) || 0;
+      const keyAge = lastKey ? Date.now() - lastKey : Infinity;
+      if (keyAge > 15000 && Date.now() - (keyframeWarnAt.get(key) || 0) > 30000) {
+        keyframeWarnAt.set(key, Date.now());
+        logger.warn(`[流] ${key} 视频在走但${Number.isFinite(keyAge) ? ` ${Math.round(keyAge / 1000)} 秒` : '一直'}没有关键帧，画面会一直等待；请把摄像机 I 帧间隔设为 1~2 秒`);
+      }
+    }
+
+    // 源流恢复了但转码进程已经死掉 → 自动重新拉起，不用等下一次推流
+    if (!TRANSCODE_DISABLED && stream.status === 'online'
+        && stream.browserPlayable === false
+        && Date.now() - last < 10000
+        && !transcode.isRunning(key)
+        && (stream.transcodeStatus === 'error' || stream.transcodeStatus === 'stopped' || stream.transcodeStatus == null)
+        && (transcodeFailCount.get(key) || 0) < 3
+        && Date.now() - (transcodeRetryAt.get(key) || 0) > 20000) {
+      transcodeRetryAt.set(key, Date.now());
+      logger.info(`[转码] ${key} 源流已恢复，自动重试转码`);
+      void transcode.maybeStart(key, { browserPlayable: false }).catch(() => {});
+    }
+  }
+  if (changed) {
+    io.emit('streamUpdate', [...Array.from(activeStreams.values()), ...Array.from(localFiles.values())]);
+  }
+}, 5000);
 
 // ─── 音频状态 API ──────────────────────────────────────────────────────────────
 app.get('/api/audio/state', (req, res) => {
@@ -973,6 +1324,8 @@ const TRACK_TEMPLATES = [
   { id: 'hj', label: '跳高', eventName: '男子跳高', eventKind: 'field', category: '男子', lanes: 0, useClock: false },
   { id: 'pv', label: '撑竿跳高', eventName: '男子撑竿跳高', eventKind: 'field', category: '男子', lanes: 0, useClock: false },
   { id: 'sp', label: '铅球', eventName: '男子铅球', eventKind: 'field', category: '男子', lanes: 0, useClock: false },
+  { id: 'sxq', label: '实心球', eventName: '男子实心球', eventKind: 'field', category: '男子', lanes: 0, useClock: false },
+  { id: 'mini', label: '迷你马拉松', eventName: '教职工迷你马拉松', eventKind: 'long', category: '混合', lanes: 0, useClock: true },
   { id: 'dt', label: '铁饼', eventName: '男子铁饼', eventKind: 'field', category: '男子', lanes: 0, useClock: false },
   { id: 'ht', label: '链球', eventName: '男子链球', eventKind: 'field', category: '男子', lanes: 0, useClock: false },
   { id: 'jt', label: '标枪', eventName: '男子标枪', eventKind: 'field', category: '男子', lanes: 0, useClock: false },
@@ -1081,6 +1434,20 @@ function emitScoreboard() {
   return payload;
 }
 
+// 全屏成绩自动隐藏：由服务端统一推进，HDMI / 监看 / 录像同时收起
+setInterval(() => {
+  if (!scoreboardConfig.fullResultsVisible) return;
+  const hideAt = Number(scoreboardConfig.fullResultsHideAt) || 0;
+  if (hideAt > 0 && Date.now() >= hideAt) {
+    scoreboardConfig = {
+      ...scoreboardConfig,
+      fullResultsVisible: false,
+      fullResultsHideAt: 0,
+    };
+    emitScoreboard();
+  }
+}, 300);
+
 // ─── 节目单（整场预载名册，现场一键切项，零手打） ─────────────────────────────
 // 现场节奏：粘一次整天节目单 → 之后只按「下一项」，项目名/轮次/组次/名册一次到位。
 // 切换前会把当前道次名册快照回写当前节，现场补录的单位/照片不会丢。
@@ -1128,7 +1495,7 @@ function padProgramAthletes(list) {
 }
 
 function normProgram(list) {
-  return (Array.isArray(list) ? list : []).slice(0, 200).map((e, i) => {
+  return (Array.isArray(list) ? list : []).slice(0, 400).map((e, i) => {
     const athletes = padProgramAthletes(normAthletes(e?.athletes));
     const eventName = String(e?.eventName ?? '').trim() || '未命名项目';
     const category = String(e?.category ?? '').trim()
@@ -1138,6 +1505,9 @@ function normProgram(list) {
     return {
       id: String(e?.id ?? `p${i + 1}`),
       time: String(e?.time ?? ''),
+      end: String(e?.end ?? ''),
+      session: String(e?.session ?? ''),
+      sessionLabel: String(e?.sessionLabel ?? ''),
       label: String(e?.label ?? '').trim() || [eventName, round, heat].filter(Boolean).join(' '),
       eventName,
       category,
@@ -1145,7 +1515,7 @@ function normProgram(list) {
       heat,
       eventKind: String(e?.eventKind ?? '') || 'sprint',
       athletes,
-      count: athletes.filter(a => a.name.trim() || a.photo).length,
+      count: athletes.filter(a => a.name.trim() || a.photo || a.unit.trim()).length,
     };
   });
 }
@@ -1184,20 +1554,23 @@ function applyProgramEntry(cfg, idx, opt = {}) {
   if (!Array.isArray(cfg.program) || !cfg.program.length) return cfg;
   const i = Math.max(0, Math.min(cfg.program.length - 1, Math.floor(Number(idx) || 0)));
 
-  // 离开当前节之前先把现场改动快照回该节；整表替换（opt.snapshot=false）时旧节目单已被换掉，不做快照
-  if (opt.snapshot !== false) {
+  // 离开当前节之前先把现场改动快照回该节；整表替换（opt.snapshot=false）时旧节目单已被换掉，不做快照。
+  // 刚载入、还没应用过任何一节时（programSynced === false），叠加层里是旧项目，也不能快照。
+  if (opt.snapshot !== false && cfg.programSynced !== false) {
     snapshotProgramEntry(cfg, opt.from === undefined ? cfg.programIndex : opt.from);
   }
   // 快照会改写旧节，所以取目标节要放在快照之后
   const entry = cfg.program[i];
   if (!entry) return cfg;
 
+  cfg.programSynced = true;
   cfg.programIndex = i;
   if (cfg.mode === 'team') cfg.mode = 'track';
   cfg.eventName = entry.eventName;
   cfg.category = entry.category;
   cfg.round = entry.round;
-  if (entry.heat) cfg.heat = entry.heat;
+  // 单组/田赛节没有组次，必须清掉上一节的「第1组」，否则上屏会一直挂着旧组次
+  cfg.heat = entry.heat || '';
   cfg.eventKind = entry.eventKind || cfg.eventKind;
   cfg.wind = '';
   // 名册就位：姓名/单位/号码/PB 带上，名次成绩清空（新一节比赛）
@@ -1259,6 +1632,138 @@ app.get('/api/scoreboard', (req, res) => {
   });
 });
 
+// ─── 成绩公示 API：把节目单 / 当前叠加层整理成「只读、按名次排序」的成绩 ─────────
+// 公示页只需要成绩，不返回照片、备注等现场资料，避免几 MB 的 base64 拖慢手机端。
+function publicResultAthlete(a) {
+  return {
+    lane: Number(a?.lane) || 0,
+    name: String(a?.name ?? '').trim(),
+    unit: String(a?.unit ?? '').trim(),
+    bib: String(a?.bib ?? '').trim(),
+    pb: String(a?.pb ?? '').trim(),
+    place: String(a?.place ?? '').trim(),
+    result: String(a?.result ?? '').trim(),
+  };
+}
+
+function hasPublishedResult(a) {
+  return !!(a.place || a.result);
+}
+
+function placeRank(place) {
+  const m = String(place ?? '').match(/\d+/);
+  return m ? Number(m[0]) : 9999;
+}
+
+function publicResultEntry(e, index, live) {
+  const all = (Array.isArray(e?.athletes) ? e.athletes : [])
+    .map(publicResultAthlete)
+    .filter(a => a.name || a.unit);
+  const athletes = all
+    .filter(hasPublishedResult)
+    .sort((a, b) => placeRank(a.place) - placeRank(b.place) || (a.lane || 0) - (b.lane || 0));
+  return {
+    index: Number.isFinite(index) ? index : -1,
+    id: String(e?.id ?? ''),
+    eventName: String(e?.eventName ?? '').trim() || '未命名项目',
+    category: String(e?.category ?? '').trim(),
+    round: String(e?.round ?? '').trim(),
+    heat: String(e?.heat ?? '').trim(),
+    eventKind: String(e?.eventKind ?? '').trim() || 'sprint',
+    time: String(e?.time ?? '').trim(),
+    session: String(e?.session ?? '').trim(),
+    sessionLabel: String(e?.sessionLabel ?? '').trim(),
+    live: !!live,
+    count: all.length,
+    resultCount: athletes.length,
+    athletes,
+  };
+}
+
+/** 全屏成绩展示用的快照：只保留名次/成绩，不带照片、备注 */
+function buildResultsSnapshot(cfg) {
+  const entry = publicResultEntry({ ...cfg, athletes: cfg?.athletes }, getProgramIndex(cfg), false);
+  return entry.resultCount > 0 ? entry : null;
+}
+
+/**
+ * 现场补录 / 计时回传后再刷一次全屏成绩：
+ * 只刷新「当前这一节」的板子；已经切走的上一节成绩保持原样，
+ * 免得下一节的空名册把刚公示的成绩覆盖掉。
+ */
+function refreshFullResults(cfg) {
+  if (!cfg.fullResultsVisible || !cfg.fullResultsSnapshot) return cfg;
+  if (Number(cfg.fullResultsSnapshot.index) !== Number(getProgramIndex(cfg))) return cfg;
+  const snap = buildResultsSnapshot(cfg);
+  return snap
+    ? { ...cfg, fullResultsSnapshot: snap }
+    : { ...cfg, fullResultsVisible: false, fullResultsHideAt: 0 };
+}
+
+function buildResultsPayload(cfg = scoreboardConfig, meetId = '') {
+  const program = Array.isArray(cfg.program) ? cfg.program : [];
+  const idx = getProgramIndex(cfg);
+  // 只载入、还没应用节目单时（programSynced === false），叠加层里仍是旧项目，
+  // 不能把它当成节目单第 1 节的成绩，否则第一次公示会挂错项目。
+  const useLive = idx >= 0 && cfg.programSynced !== false;
+  const entries = [];
+  let current = null;
+
+  program.forEach((e, i) => {
+    const isCurrent = useLive && i === idx;
+    const src = isCurrent
+      ? {
+        ...e,
+        eventName: cfg.eventName,
+        category: cfg.category,
+        round: cfg.round,
+        heat: cfg.heat,
+        eventKind: cfg.eventKind,
+        athletes: cfg.athletes,
+      }
+      : e;
+    const entry = publicResultEntry(src, i, isCurrent);
+    if (isCurrent) current = entry;
+    if (entry.resultCount > 0) entries.push(entry);
+  });
+
+  if (!current) {
+    // 没有节目单（或节目单尚未应用）时，公示当前叠加层里的项目
+    current = publicResultEntry({ id: 'current', ...cfg, athletes: cfg.athletes }, -1, true);
+  }
+
+  let meet = null;
+  try {
+    const list = listPresetMeets();
+    meet = list.find(m => m.id === meetId) || list[0] || null;
+  } catch { /* 赛程缺失时仍能公示 */ }
+
+  return {
+    ok: true,
+    generatedAt: new Date().toISOString(),
+    title: meet?.name || '运动会成绩公示',
+    meet: meet ? {
+      id: meet.id,
+      name: meet.name,
+      shortName: meet.shortName,
+      school: meet.school,
+      edition: meet.edition,
+      dateRange: meet.dateRange,
+      venue: meet.venue,
+      sessions: meet.sessions,
+    } : null,
+    programIndex: idx,
+    current,
+    // 历史成绩按节目单顺序返回，前端可从后往前展示（最新在前）
+    entries,
+  };
+}
+
+app.get('/api/results', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(buildResultsPayload(scoreboardConfig, String(req.query?.meet || '')));
+});
+
 app.post('/api/scoreboard', (req, res) => {
   const patch = req.body || {};
   const next = { ...scoreboardConfig };
@@ -1276,6 +1781,8 @@ app.post('/api/scoreboard', (req, res) => {
     'athletePatch', 'athleteIndex',
     // 节目单（整场预载名册）
     'program', 'programIndex', 'programAction', 'programSnapshot',
+    // 全屏成绩公示
+    'fullResultsAuto', 'fullResultsDuration', 'fullResultsVisible', 'resultsAction',
   ]);
   for (const key of keys) {
     if (patch[key] !== undefined) next[key] = patch[key];
@@ -1288,6 +1795,12 @@ app.post('/api/scoreboard', (req, res) => {
   if (Array.isArray(next.athletes)) {
     next.athletes = normAthletes(next.athletes);
   }
+
+  next.fullResultsDuration = Math.max(0, Math.min(120, Math.floor(Number(next.fullResultsDuration) || 0)));
+  // 切项前先记住「刚结束的这一项」的成绩：节目单切走后当前名册会被下一节覆盖
+  const outgoingResults = (patch.programAction === 'next' || patch.programAction === 'prev')
+    ? buildResultsSnapshot(next)
+    : null;
 
   // 节目单：整表替换 / 切项 / 单节快照（只在真的动节目单时归一，避免高频 patch 反复重建）
   const touchesProgram = patch.program !== undefined
@@ -1305,15 +1818,22 @@ app.post('/api/scoreboard', (req, res) => {
       // （整表替换时不做快照：旧节目单已被换掉，写回当前比赛信息会污染新载入的那一节）
       if (next.program.length && patch.applyFirst !== false) {
         applyProgramEntry(next, next.programIndex, { resetClock: false, snapshot: false });
+      } else {
+        // 只载入、不切项：当前叠加层仍是旧项目，第一次「应用」不能把旧项目写回第 1 节
+        next.programSynced = false;
       }
     } else if (patch.programAction === 'next') {
-      applyProgramEntry(next, (cur < 0 ? 0 : cur + 1) % Math.max(1, program.length), { from: cur });
+      // 到最后一节就停住：不能绕回第 1 节，否则会静默清零跑表、换错项目
+      const target = cur < 0 ? 0 : Math.min(program.length - 1, cur + 1);
+      if (program.length && target !== cur) applyProgramEntry(next, target, { from: cur });
     } else if (patch.programAction === 'prev') {
-      applyProgramEntry(next, (cur <= 0 ? Math.max(1, program.length) : cur) - 1, { from: cur });
+      const target = cur <= 0 ? 0 : cur - 1;
+      if (program.length && target !== cur) applyProgramEntry(next, target, { from: cur });
     } else if (patch.programAction === 'apply' || patch.programAction === 'goto') {
       applyProgramEntry(next, patch.programIndex, { from: cur });
     } else if (patch.programSnapshot) {
       snapshotProgramEntry(next, cur);
+      next.programSynced = true;
     }
 
     next.program = normProgram(next.program);
@@ -1322,6 +1842,37 @@ app.post('/api/scoreboard', (req, res) => {
     delete next.programAction;
     delete next.programSnapshot;
   }
+
+  // 全屏成绩公示：优先响应当次请求里的手动动作，否则在切项后自动上屏
+  const resultsAction = patch.resultsAction ? String(patch.resultsAction) : '';
+  const resultsSeconds = Math.max(0, Math.min(120, Math.floor(Number(next.fullResultsDuration) || 0)));
+  next.fullResultsDuration = resultsSeconds;
+  const nextHideAt = resultsSeconds > 0 ? Date.now() + resultsSeconds * 1000 : 0;
+  if (resultsAction === 'hide' || (resultsAction === 'toggle' && scoreboardConfig.fullResultsVisible)) {
+    next.fullResultsVisible = false;
+    next.fullResultsHideAt = 0;
+  } else if (resultsAction === 'show' || resultsAction === 'toggle' || resultsAction === 'next') {
+    const snap = outgoingResults || buildResultsSnapshot(next);
+    if (snap) {
+      next.fullResultsVisible = true;
+      next.fullResultsSnapshot = snap;
+      next.fullResultsHideAt = nextHideAt;
+    } else {
+      next.fullResultsVisible = false;
+      next.fullResultsHideAt = 0;
+    }
+  } else if (resultsAction === '') {
+    // 自动：按「下一项 / 上一项」后，把刚结束项目的成绩盖满画面
+    if (outgoingResults && next.fullResultsAuto !== false) {
+      next.fullResultsVisible = true;
+      next.fullResultsSnapshot = outgoingResults;
+      next.fullResultsHideAt = nextHideAt;
+    } else if (next.fullResultsVisible && patch.fullResultsDuration !== undefined) {
+      // 板子已经在屏上时改「秒后收起」：按新时长从现在重新计时
+      next.fullResultsHideAt = nextHideAt;
+    }
+  }
+  delete next.resultsAction;
 
   // 单名选手增量更新：现场只改一格时不必重传整份名册（照片很大）
   if (patch.athletePatch && typeof patch.athletePatch === 'object') {
@@ -1424,7 +1975,7 @@ app.post('/api/scoreboard', (req, res) => {
 
   next.clockMs = currentClockMs(next);
   if (!next.clockRunning) next.clock = next.clock || formatTrackClock(next.clockMs);
-  scoreboardConfig = next;
+  scoreboardConfig = refreshFullResults(next);
   emitScoreboard();
   res.json(scoreboardConfig);
 });
@@ -1501,7 +2052,7 @@ function applyTimingToScoreboard({ resultsByLane = {}, placesByLane = {}, meta =
     next.showPlaces = true;
   }
 
-  scoreboardConfig = next;
+  scoreboardConfig = refreshFullResults(next);
   const line = Object.entries(resultsByLane).map(([l, r]) => `${l}道 ${r}`).join('  ');
   logger.info(`[计时] 成绩已回传（${by}）：${line || '无成绩'}`);
   const payload = emitScoreboard();
@@ -1540,6 +2091,9 @@ io.on('connection', (socket) => {
   if (selectedOutputStream) {
     socket.emit('outputSelected', { streamKey: selectedOutputStream });
   }
+  if (previewStreamKey) {
+    socket.emit('previewSelected', { streamKey: previewStreamKey });
+  }
   // 新连接时同步当前日志状态
   socket.emit('logStatusChanged', { verbose: logger.isVerbose() });
 
@@ -1569,6 +2123,12 @@ io.on('connection', (socket) => {
   // 主窗口 VU 表数据转发给音频控制台
   socket.on('audio:vuData', (data) => {
     socket.broadcast.emit('audio:vuData', data);
+  });
+
+  // 预览(PVW)选择 → 广播给输出/HDMI 窗口做预加载
+  socket.on('preview:select', ({ streamKey } = {}) => {
+    previewStreamKey = streamKey || null;
+    io.emit('previewSelected', { streamKey: previewStreamKey });
   });
 
   socket.on('disconnect', () => {

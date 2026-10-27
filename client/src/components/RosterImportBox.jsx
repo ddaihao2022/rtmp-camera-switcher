@@ -28,6 +28,7 @@ export default function RosterImportBox({ existing = [], lanes = 8, onImport }) 
   const [mode, setMode] = useState('replace');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
   const [showSample, setShowSample] = useState(false);
   const fileRef = useRef(null);
 
@@ -74,9 +75,16 @@ export default function RosterImportBox({ existing = [], lanes = 8, onImport }) 
           };
         });
       }
-      await onImport(athletes);
+      const saved = await onImport(athletes);
+      if (saved === null) {
+        setErr('导入失败，未保存；原因见上方提示');
+        return;
+      }
+      setErr('');
       flash(`已导入 ${parsed.count} 位选手（${mode === 'append' ? '填空道次' : '覆盖名册'}）`);
       setText('');
+    } catch (e) {
+      setErr('导入失败：' + (e?.message || e));
     } finally {
       setBusy(false);
     }
@@ -137,6 +145,7 @@ export default function RosterImportBox({ existing = [], lanes = 8, onImport }) 
           有 {parsed.warnings.length} 行没识别出选手（已跳过）：{parsed.warnings[0].slice(0, 24)}
         </p>
       )}
+      {err && <p className="settings-muted" style={{ color: '#fca5a5' }}>{err}</p>}
       {msg && <p className="settings-muted" style={{ color: '#86efac' }}>{msg}</p>}
     </div>
   );

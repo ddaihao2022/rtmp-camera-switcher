@@ -66,6 +66,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * @returns {Promise<{ success: boolean, filePaths: string[] }>}
    */
   saveRecordings: (files) => ipcRenderer.invoke('record:saveBatch', { files }),
+
+  // 录制：边录边写 + 分段（Electron 专用）
+  /** @returns {Promise<{ dir: string, segmentMinutes: number }>} */
+  getRecordingSettings: () => ipcRenderer.invoke('recording:getSettings'),
+  setRecordingSettings: (patch) => ipcRenderer.invoke('recording:setSettings', patch),
+  pickRecordingDir: () => ipcRenderer.invoke('recording:pickDir'),
+  getRecordingDiskInfo: (dir) => ipcRenderer.invoke('recording:diskInfo', dir),
+  /**
+   * 开始一组录制文件（每个变体一个文件）
+   * @param {{ dir: string, base: string, files: Array<{ suffix: string, ext: string, segment: number }> }} payload
+   * @returns {Promise<{ success: boolean, dir?: string, files?: Array<{ token: string, filePath: string }>, error?: string, code?: string }>}
+   */
+  beginRecording: (payload) => ipcRenderer.invoke('recording:begin', payload),
+  appendRecording: (token, buffer) => ipcRenderer.invoke('recording:append', { token, buffer }),
+  endRecording: (token) => ipcRenderer.invoke('recording:end', { token }),
+  openRecordingDir: (dir) => ipcRenderer.invoke('recording:openDir', dir),
+  revealRecording: (filePath) => ipcRenderer.invoke('recording:reveal', filePath),
+  onRecordingError: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('recording:error', handler);
+    return () => ipcRenderer.removeListener('recording:error', handler);
+  },
   // 本地媒体文件
   selectLocalFiles: () => ipcRenderer.invoke('dialog:openFile'),
   // 将本地绝对路径转为 file:// URL（仅 Electron 环境有效）

@@ -153,7 +153,7 @@ try {
 
   cfg = await post({ programAction: 'next' });
 
-  await ok('末节 next 回到首节（循环），田赛字段正确', () => {
+  await ok('再按下一项到末节：田赛字段正确', () => {
     assert.equal(cfg.programIndex, 2);
     assert.equal(cfg.eventName, '女子跳远');
     assert.equal(cfg.eventKind, 'field');
@@ -162,17 +162,17 @@ try {
   });
 
   cfg = await post({ programAction: 'next' });
-  await ok('第 3 节 next 回卷到第 1 节，并带上快照后的名册', () => {
-    assert.equal(cfg.programIndex, 0);
-    assert.deepEqual(names(cfg), ['张三', '李四（现场改）'], '现场改动随快照一起回来');
-    assert.equal(cfg.athletes[3].photo, 'data:image/png;base64,AAA');
+  await ok('末节 next 停在末节，不绕回第 1 节（避免现场静默清跑表）', () => {
+    assert.equal(cfg.programIndex, 2);
+    assert.equal(cfg.eventName, '女子跳远');
+    assert.deepEqual(names(cfg), ['王七', '孙八']);
     assert.deepEqual(entryNames(cfg, 2), ['王七', '孙八']);
   });
 
   cfg = await post({ programAction: 'prev' });
-  await ok('prev 从首节回卷到末节', () => {
-    assert.equal(cfg.programIndex, 2);
-    assert.deepEqual(names(cfg), ['王七', '孙八']);
+  await ok('prev 从末节回到第 2 节', () => {
+    assert.equal(cfg.programIndex, 1);
+    assert.deepEqual(names(cfg), ['王五', '赵六']);
   });
 
   cfg = await post({ programAction: 'apply', programIndex: 1 });
@@ -202,6 +202,12 @@ try {
     assert.deepEqual(names(cfg), ['张三', '李四（现场改）']);
   });
 
+  cfg = await post({ programAction: 'prev' });
+  await ok('首节 prev 停在首节，不绕回末节', () => {
+    assert.equal(cfg.programIndex, 0);
+    assert.deepEqual(names(cfg), ['张三', '李四（现场改）']);
+  });
+
   // 整表替换：不把当前比赛信息污染进新载入的第 1 节
   await post({ programAction: 'apply', programIndex: 2 });
   cfg = await post({ program: [PROGRAM[0]], programIndex: 0, applyFirst: true });
@@ -211,6 +217,18 @@ try {
     assert.equal(cfg.eventName, '男子100米');
     assert.equal(cfg.heat, '第1组');
     assert.deepEqual(entryNames(cfg, 0), ['张三', '李四'], '不应被当前比赛（女子跳远）污染');
+  });
+
+  // 只载入、不切项：当前叠加层仍是旧项目，第一次「应用」不能把旧项目快照进第 1 节
+  cfg = await post({ program: PROGRAM, programIndex: 2, applyFirst: true });
+  assert.equal(cfg.eventName, '女子跳远');
+  cfg = await post({ program: [PROGRAM[0], PROGRAM[2]], programIndex: 0, applyFirst: false });
+  cfg = await post({ programAction: 'apply', programIndex: 0 });
+  await ok('只载入不应用时，第一次应用不会污染第 1 节', () => {
+    assert.equal(cfg.eventName, '男子100米');
+    assert.equal(cfg.program[0].eventName, '男子100米');
+    assert.equal(cfg.program[0].heat, '第1组');
+    assert.deepEqual(entryNames(cfg, 0), ['张三', '李四']);
   });
 
   // 清空节目单：当前名册保留

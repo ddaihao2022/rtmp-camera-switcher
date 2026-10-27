@@ -167,6 +167,7 @@
   const API = location.origin;
   const LS_JUDGE = 'rtmp.timing.judge';
   const LS_QUEUE = 'rtmp.timing.queue';
+  const LS_REJECTED = 'rtmp.timing.rejected';
 
   const $ = (id) => document.getElementById(id);
   const state = {
@@ -179,6 +180,7 @@
     swBase: 0,
     lane: null,         // 当前面板打开的道次
     queue: JSON.parse(localStorage.getItem(LS_QUEUE) || '[]'),
+    rejected: JSON.parse(localStorage.getItem(LS_REJECTED) || '[]'),
   };
 
   // ── 工具 ────────────────────────────────────────────────────────────────
@@ -217,42 +219,107 @@
   }
   const vib = (n) => { try { navigator.vibrate && navigator.vibrate(n || 12); } catch (e) {} };
   function saveQueue() { localStorage.setItem(LS_QUEUE, JSON.stringify(state.queue)); paintPending(); }
+  function saveRejected() { localStorage.setItem(LS_REJECTED, JSON.stringify(state.rejected.slice(0, 50))); paintPending(); }
+  const HAS_GROUP = /(男子|女子|男、女|男女|混合|小学|初中|高中|初一|初二|高一|高二|教职工|小四|小五|小六|焦)/;
+  function eventNameOf(e) {
+    const n = String((e && e.eventName) || '').trim();
+    const c = String((e && e.category) || '').trim();
+    if (!n) return c;
+    if (!c || HAS_GROUP.test(n)) return n;
+    return c + n;
+  }
+  function roundLabel() {
+    const e = (state.timing && state.timing.event) || {};
+    return [eventNameOf(e), e.round, e.heat].filter(Boolean).join(' ') || '当前轮次';
+  }
   function paintPending() {
     const el = $('pending');
-    if (state.queue.length) { el.classList.remove('hidden'); el.textContent = '待补传 ' + state.queue.length; }
-    else el.classList.add('hidden');
+    const q = state.queue.length;
+    const bad = state.rejected.length;
+    if (q || bad) {
+      el.classList.remove('hidden');
+      el.textContent = (q ? '待补传 ' + q : '')
+        + (q && bad ? ' · ' : '')
+        + (bad ? '补传失败 ' + bad : '');
+      el.style.color = bad ? '#fca5a5' : '';
+      el.title = bad ? '点击查看失败原因' : '';
+    } else {
+      el.classList.add('hidden');
+      el.style.color = '';
+    }
   }
+  $('pending').addEventListener('click', () => {
+    if (!state.rejected.length) return;
+    const lines = state.rejected.slice(0, 8).map((it) =>
+      (it.__label || '') + ' 第' + it.lane + '道 ' + fmt(it.time) + '：' + (it.__reason || '被拒绝'));
+    alert('这些成绩没有写入服务器（可能已切项目/裁判被停用）：\n\n' + lines.join('\n')
+      + (state.rejected.length > 8 ? '\n…共 ' + state.rejected.length + ' 条' : '')
+      + '\n\n请把成绩报给汇总台。');
+  });
 
   // ── 提交（离线自动排队补传） ─────────────────────────────────────────────
+  // 每条成绩带上 roundKey：断网期间导播切了项目，补传时服务端会拒绝，
+  // 避免把上一项的成绩写进当前项目。
+  function withRound(payload) {
+    return {
+      ...payload,
+      roundKey: (state.timing && state.timing.roundKey) || '',
+      __label: roundLabel(),
+    };
+  }
+  function queueItem(body) {
+    state.queue.push({ ...body, __q: Date.now() });
+    saveQueue();
+  }
   async function postEntry(payload) {
+    const body = withRound(payload);
+    let r;
     try {
-      const r = await fetch(API + '/api/timing/entry', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      r = await fetch(API + '/api/timing/entry', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
-      const d = await r.json();
-      if (!r.ok || d.ok === false) throw new Error(d.error || '提交失败');
-      return d;
     } catch (e) {
-      state.queue.push({ ...payload, __q: Date.now() });
-      saveQueue();
+      queueItem(body);
       throw e;
     }
+    let d = {};
+    try { d = await r.json(); } catch (e) { d = {}; }
+    if (!r.ok || d.ok === false) {
+      const err = new Error(d.error || ('提交失败 HTTP ' + r.status));
+      err.status = r.status;
+      // 4xx 是永久失败（轮次已切/裁判停用/道次非法），重试也不会成功
+      err.permanent = r.status >= 400 && r.status < 500;
+      if (!err.permanent) queueItem(body);
+      throw err;
+    }
+    return d;
   }
   async function flushQueue() {
     if (!state.queue.length) return;
     const left = [];
+    const rejected = [];
     for (const item of state.queue) {
+      const { __q, __label, ...payload } = item;
       try {
-        const { __q, ...payload } = item;
         const r = await fetch(API + '/api/timing/entry', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         });
-        if (!r.ok) left.push(item);
+        let d = {};
+        try { d = await r.json(); } catch (e) { d = {}; }
+        if (r.ok && d.ok !== false) continue;
+        if (r.status >= 400 && r.status < 500) {
+          rejected.push({ ...item, __reason: d.error || ('HTTP ' + r.status) });
+        } else {
+          left.push(item);
+        }
       } catch (e) { left.push(item); }
     }
     state.queue = left;
+    if (rejected.length) state.rejected = [...rejected, ...state.rejected].slice(0, 50);
     saveQueue();
-    if (!left.length) toast('补传完成', 'ok');
+    saveRejected();
+    if (rejected.length) toast('有 ' + rejected.length + ' 条成绩无法补传，请报给汇总台', 'err');
+    else if (!left.length) toast('补传完成', 'ok');
   }
 
   // ── 系统跑表 / 本地跑表 ──────────────────────────────────────────────────
@@ -312,7 +379,7 @@
   function renderHeader() {
     const c = state.cfg || {};
     const t = (state.timing && state.timing.event) || {};
-    const name = [c.category || t.category || '', String(c.eventName || t.eventName || '').replace(/^(男子|女子)/, '')].join('');
+    const name = eventNameOf(c.eventName ? c : t);
     $('eventLine').firstChild.nodeValue = name || '等待主控台设置项目';
     $('eventMeta').textContent = [c.round || t.round, c.heat || t.heat, c.wind ? '风速 ' + c.wind : '']
       .filter(Boolean).join(' · ') || '';
@@ -397,7 +464,8 @@
       vib(18);
       closeLane();
     } catch (e) {
-      toast('已暂存本地，联网后自动补传', 'err');
+      if (e && e.permanent) toast(e.message || '提交被拒绝', 'err');
+      else toast('已暂存本地，联网后自动补传', 'err');
       closeLane();
     }
   }

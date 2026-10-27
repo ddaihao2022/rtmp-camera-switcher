@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
  * 侧栏折叠分区
  * @param {string} id 稳定 id（localStorage 记忆展开状态）
  * @param {boolean} defaultOpen
+ * @param {boolean} keepMounted 折叠时只隐藏不卸载（用于录制面板这类不能被打断的分区）
  */
 export default function SidebarSection({
   id,
@@ -13,6 +14,7 @@ export default function SidebarSection({
   actions,
   defaultOpen = true,
   collapsible = true,
+  keepMounted = false,
   children,
 }) {
   const key = `sidebar-sec-${id}`;
@@ -51,7 +53,11 @@ export default function SidebarSection({
           </span>
         )}
       </button>
-      {open && <div className="sidebar-sec-body">{children}</div>}
+      {open ? (
+        <div className="sidebar-sec-body">{children}</div>
+      ) : keepMounted ? (
+        <div className="sidebar-sec-body" style={{ display: 'none' }}>{children}</div>
+      ) : null}
     </section>
   );
 }

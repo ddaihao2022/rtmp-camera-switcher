@@ -37,6 +37,11 @@ export function getVideoCodecLabel(stream) {
 }
 
 export function isBrowserPlayableStream(stream) {
+  // 服务端已经按 SPS 判断过 8-bit / 4:2:0（H.264 High10、4:2:2 也必须转码）
+  if (stream?.browserPlayable === false) return false;
+  // 视频是 H.264，但音频是 Opus/FLAC 等 enhanced 格式 → flv.js 也放不了
+  if (stream?.audioPlayable === false) return false;
+  if (stream?.browserPlayable === true) return true;
   // 只按"能确认的编码"来拦：编码未知时放行，让 flv.js 自己试（试不了它会抛真实错误），
   // 不能因为推流端没上报 metadata 就判定不能播
   const codec = getVideoCodecLabel(stream);
@@ -54,6 +59,21 @@ export function canPlayWithTranscode(stream) {
 
 export function getUnsupportedCodecMessage(stream) {
   const codec = getVideoCodecLabel(stream);
-  if (codec === 'unknown' || codec === 'H.264') return '';
-  return `当前流编码为 ${codec}，内置 FLV 播放器仅稳定支持 H.264，建议把推流编码改为 H.264。`;
+  const label = stream?.videoCodecLabel || codec;
+  // 推流端会话还在、但已经很久没有媒体包（或转码因此被收摊）：
+  // 先说明“没有画面”，别甩锅给转码器 —— 现场看到“转码失败”会去折腾编码设置。
+  if (stream?.status === 'stalled' || stream?.transcodeStatus === 'stopped') {
+    return '推流端没有画面数据：摄像头可能切到后台/锁屏，或编码器已停止；重新推流即可。';
+  }
+  if (stream?.audioPlayable === false && stream?.browserPlayable !== false) {
+    return `当前流音频为 ${stream?.audioCodecLabel || '不兼容格式'}，内置播放器仅稳定支持 AAC / MP3；服务端可转 AAC，失败时请把音频编码改为 AAC。`;
+  }
+  if (stream?.browserPlayable !== false && (codec === 'unknown' || codec === 'H.264')) return '';
+  if (stream?.transcodeStatus === 'error') {
+    const detail = String(stream?.transcodeError || '').trim();
+    return detail
+      ? `当前流编码为 ${label}，服务端转码失败：${detail}`
+      : `当前流编码为 ${label}，服务端转码 H.264 失败，建议把推流编码改为 H.264。`;
+  }
+  return `当前流编码为 ${label}，内置 FLV 播放器仅稳定支持 8-bit H.264，建议把推流编码改为 H.264。`;
 }

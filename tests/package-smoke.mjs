@@ -161,6 +161,13 @@ try {
     assert.equal(shell.hasElectronApi, true, '预加载脚本应注入 electronAPI');
   });
 
+  // 成品包冷启动 + 大 bundle 解码可能超过 2 秒，等主界面真正渲染出设置按钮再点
+  let hasSettings = false;
+  for (let i = 0; i < 24 && !hasSettings; i += 1) {
+    hasSettings = await page.eval(`Boolean(document.querySelector('.settings-btn'))`);
+    if (!hasSettings) await sleep(250);
+  }
+  assert.ok(hasSettings, '主界面未渲染出设置按钮（成品包可能启动超时）');
   await page.eval(`document.querySelector('.settings-btn').click()`);
   await sleep(1000);
   const view = await page.eval(`[...document.querySelectorAll('.settings-section-title')].map(e => e.textContent.trim())`);
@@ -178,6 +185,21 @@ try {
   ok('包内服务端可用，且已带节目单字段', () => {
     assert.ok(Array.isArray(readBack.program), `GET /api/scoreboard 应返回 program 数组，实际 ${typeof readBack.program}`);
     assert.equal(typeof readBack.programIndex, 'number');
+  });
+
+  // 计时页 / 网页控台必须随包发布，否则现场扫码会 404 或无限重定向
+  const timerPage = await fetch(`${apiBase}/timer/`);
+  ok('包内计时录入页可访问（二维码不再扫到 404）', () => {
+    assert.equal(timerPage.status, 200, `实际 ${timerPage.status}`);
+  });
+  const consolePage = await fetch(`${apiBase}/console/`);
+  ok('包内网页控台可访问', () => {
+    assert.equal(consolePage.status, 200, `实际 ${consolePage.status}`);
+  });
+  const rootPage = await fetch(`${apiBase}/`, { redirect: 'manual' });
+  ok('访问根地址自动跳到网页控台', () => {
+    assert.ok([301, 302, 303, 307, 308].includes(rootPage.status), `实际 ${rootPage.status}`);
+    assert.match(rootPage.headers.get('location') || '', /\/console\//);
   });
 
   if (!fullMode) {
@@ -222,7 +244,13 @@ try {
       assert.ok(cfg.athletes.every(a => !a.place && !a.result), '换项应清空名次成绩');
     });
 
-    await sleep(600);
+    // 侧栏分组会记住上次的折叠状态；成品机可能被人手动折叠过，先展开「田径直播」再断言
+    await page.eval(`(() => {
+      const sec = [...document.querySelectorAll('.sidebar-sec')].find(s =>
+        (s.querySelector('.sidebar-sec-title')?.textContent || '').includes('田径'));
+      if (sec && !sec.classList.contains('open')) sec.querySelector('.sidebar-sec-head')?.click();
+    })()`);
+    await sleep(500);
     const bar = await page.eval(`(() => {
       const box = document.querySelector('.tp-program');
       return box ? { text: box.querySelector('.tp-program-head').textContent,

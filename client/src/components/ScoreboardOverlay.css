@@ -384,6 +384,35 @@
   border-color: rgba(245, 158, 11, 0.5);
   color: #fde68a;
 }
+/* 成绩公示：自动上屏 + 收起秒数 */
+.tp-program-results {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.5rem;
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px dashed rgba(59, 130, 246, 0.25);
+}
+.tp-program-results .tp-toggle {
+  margin: 0;
+}
+.tp-results-secs input {
+  width: 3.2em;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  color: #fde68a;
+  font-size: 0.66rem;
+  padding: 0.06rem 0.2rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.tp-results-secs input::-webkit-outer-spin-button,
+.tp-results-secs input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
 
 .track-panel-templates {
   display: flex;
@@ -885,6 +914,294 @@
   font-weight: 700;
   color: #fbbf24;
   font-variant-numeric: tabular-nums;
+}
+
+/* ═══════════════ 全屏成绩公示 ═══════════════
+   每个项目结束后盖满 PROGRAM / HDMI / 录像画面。
+   和选手介绍一样用容器查询单位（cqw/cqh）：同一个组件在 HDMI 大屏、
+   360px 的 PROGRAM 小监看和成片里比例一致；字号再用 clamp 给一个 px 下限，
+   小监看里也不至于糊成一片。 */
+
+.full-results {
+  position: absolute;
+  inset: 0;
+  z-index: 14;
+  container-type: size;
+  overflow: hidden;
+  background: #080b12;
+  color: #f5f5f7;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  pointer-events: none;
+}
+
+.full-results-glow {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 70% at 16% 4%, rgba(245, 158, 11, 0.20), transparent 62%),
+    radial-gradient(ellipse 70% 70% at 90% 100%, rgba(59, 130, 246, 0.20), transparent 62%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 26%);
+}
+
+/* 细网格：让大面积暗底不至于死板 */
+.full-results::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 6.25% 100%;
+  opacity: 0.45;
+}
+
+.full-results-watermark {
+  position: absolute;
+  right: 2cqw;
+  bottom: 26cqh;
+  font-size: 20cqw;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.032);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.full-results-inner {
+  position: relative;
+  z-index: 2;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.9cqh;
+  padding: 4.2cqh 4.2cqw 3.6cqh;
+  box-sizing: border-box;
+}
+
+/* ── 页眉 ────────────────────────────────────── */
+.full-results-head {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9cqh;
+  padding-bottom: 1.6cqh;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.full-results-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.7cqw;
+  font-size: clamp(7px, 1.85cqh, 22px);
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: #fbbf24;
+}
+
+.full-results-dot {
+  width: 1cqh;
+  height: 1cqh;
+  border-radius: 50%;
+  background: #fbbf24;
+  box-shadow: 0 0 1.2cqh rgba(251, 191, 36, 0.85);
+}
+
+.full-results-head h1 {
+  margin: 0;
+  font-size: clamp(14px, 5.4cqh, 68px);
+  font-weight: 800;
+  line-height: 1.06;
+  letter-spacing: 0.015em;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.full-results-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6cqw;
+}
+
+.full-results-meta span {
+  font-size: clamp(7px, 1.8cqh, 21px);
+  font-weight: 600;
+  color: #cbd5e1;
+  padding: 0.32cqh 0.9cqw;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  white-space: nowrap;
+}
+
+/* ── 成绩列表 ────────────────────────────────── */
+.full-results-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 1.15cqh 2cqw;
+}
+
+.full-results-row {
+  display: flex;
+  align-items: center;
+  gap: 1.1cqw;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 1.5cqw 0 1.1cqw;
+  border-radius: 1cqh;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-left: 0.5cqh solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.03));
+  overflow: hidden;
+}
+
+.full-results-rank {
+  flex: 0 0 auto;
+  min-width: 2.4em;
+  text-align: center;
+  font-size: clamp(9px, 3.1cqh, 38px);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #cbd5e1;
+  letter-spacing: -0.02em;
+}
+
+.full-results-lane {
+  flex: 0 0 auto;
+  width: clamp(14px, 3.6cqh, 44px);
+  height: clamp(14px, 3.6cqh, 44px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.7cqh;
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.42);
+  color: #fde68a;
+  font-size: clamp(8px, 1.9cqh, 22px);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.full-results-who {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 1cqw;
+  overflow: hidden;
+}
+
+.full-results-who b {
+  font-size: clamp(9px, 3cqh, 36px);
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.full-results-who small {
+  flex: 0 1 auto;
+  font-size: clamp(7px, 1.85cqh, 21px);
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.full-results-bib {
+  flex: 0 0 auto;
+  font-size: clamp(7px, 1.7cqh, 20px);
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+.full-results-time {
+  flex: 0 0 auto;
+  min-width: 5.5cqw;
+  text-align: right;
+  font-size: clamp(9px, 3.05cqh, 37px);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: #fde68a;
+}
+
+/* 奖牌行：左缘亮色 + 名次同色 */
+.full-results-row.medal-gold {
+  border-left-color: #fbbf24;
+  background: linear-gradient(90deg, rgba(251, 191, 36, 0.20), rgba(255, 255, 255, 0.03));
+}
+
+.full-results-row.medal-gold .full-results-rank,
+.full-results-row.medal-gold .full-results-time {
+  color: #fbbf24;
+}
+
+.full-results-row.medal-silver {
+  border-left-color: #cbd5e1;
+  background: linear-gradient(90deg, rgba(203, 213, 225, 0.16), rgba(255, 255, 255, 0.03));
+}
+
+.full-results-row.medal-silver .full-results-rank,
+.full-results-row.medal-silver .full-results-time {
+  color: #e2e8f0;
+}
+
+.full-results-row.medal-bronze {
+  border-left-color: #d97706;
+  background: linear-gradient(90deg, rgba(217, 119, 6, 0.18), rgba(255, 255, 255, 0.03));
+}
+
+.full-results-row.medal-bronze .full-results-rank,
+.full-results-row.medal-bronze .full-results-time {
+  color: #f0a75a;
+}
+
+/* 人数少（≤5 行）时字放大，人多（>8 行）时收紧 */
+.full-results.is-few .full-results-rank { font-size: clamp(12px, 5cqh, 60px); }
+.full-results.is-few .full-results-who b { font-size: clamp(12px, 4.4cqh, 52px); }
+.full-results.is-few .full-results-who small { font-size: clamp(9px, 2.4cqh, 28px); }
+.full-results.is-few .full-results-time { font-size: clamp(12px, 4.6cqh, 54px); }
+.full-results.is-few .full-results-lane {
+  width: clamp(18px, 5cqh, 60px);
+  height: clamp(18px, 5cqh, 60px);
+  font-size: clamp(9px, 2.6cqh, 30px);
+}
+
+.full-results.is-many .full-results-row { gap: 0.9cqw; padding: 0 1.2cqw 0 0.9cqw; }
+.full-results.is-many .full-results-rank { font-size: clamp(8px, 2.5cqh, 30px); }
+.full-results.is-many .full-results-who b { font-size: clamp(8px, 2.35cqh, 28px); }
+.full-results.is-many .full-results-who small { font-size: clamp(7px, 1.5cqh, 17px); }
+.full-results.is-many .full-results-time { font-size: clamp(8px, 2.45cqh, 29px); }
+.full-results.is-many .full-results-bib { font-size: clamp(7px, 1.4cqh, 16px); }
+.full-results.is-many .full-results-lane {
+  width: clamp(12px, 2.9cqh, 34px);
+  height: clamp(12px, 2.9cqh, 34px);
+  font-size: clamp(7px, 1.55cqh, 18px);
+}
+
+/* ── 页脚 ────────────────────────────────────── */
+.full-results-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2cqw;
+  font-size: clamp(7px, 1.75cqh, 20px);
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+.full-results-foot .full-results-note {
+  margin-left: auto;
+  color: #64748b;
+  letter-spacing: 0.05em;
 }
 
 

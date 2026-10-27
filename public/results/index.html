@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#070c16">
+<title>成绩公示 · 运动会</title>
+<style>
+  :root{
+    --bg:#070c16; --bg2:#0a1120; --panel:#0f1a2b; --panel2:#132135;
+    --line:#20324b; --line2:#2b4363;
+    --txt:#eef4ff; --muted:#93a8c4; --dim:#657d9c;
+    --gold:#fbbf24; --silver:#cbd5e1; --bronze:#e08b55;
+    --green:#22c55e; --blue:#60a5fa; --red:#f87171;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  [hidden]{display:none!important}
+  html,body{margin:0;padding:0}
+  body{
+    min-height:100vh; color:var(--txt);
+    background:
+      radial-gradient(1100px 520px at 12% -8%, rgba(37,99,235,.20), transparent 60%),
+      radial-gradient(900px 480px at 92% 4%, rgba(245,158,11,.12), transparent 62%),
+      linear-gradient(180deg,var(--bg),var(--bg2) 45%,#060a12);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  button,input{font:inherit;color:inherit}
+  button{cursor:pointer}
+  .top{
+    position:sticky; top:0; z-index:30;
+    display:flex; align-items:center; gap:16px;
+    padding:14px clamp(14px,3vw,34px);
+    background:rgba(7,12,22,.9);
+    border-bottom:1px solid var(--line);
+    backdrop-filter:blur(14px);
+  }
+  .brand{min-width:0; flex:1}
+  .brand .eyebrow{
+    display:flex; align-items:center; gap:8px;
+    color:var(--gold); font-size:12px; font-weight:800; letter-spacing:.18em;
+  }
+  .brand h1{
+    margin:3px 0 0; font-size:clamp(20px,2.4vw,30px); line-height:1.2;
+    font-weight:900; letter-spacing:.02em;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .brand .sub{
+    margin-top:4px; color:var(--muted); font-size:12px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .top-side{display:flex; align-items:center; gap:10px; flex:none}
+  .clock{
+    font:800 clamp(17px,2vw,24px)/1 ui-monospace,Consolas,monospace;
+    font-variant-numeric:tabular-nums; letter-spacing:.04em;
+    padding:9px 13px; border-radius:12px;
+    background:rgba(148,163,184,.07); border:1px solid var(--line);
+  }
+  .conn{
+    display:flex; align-items:center; gap:7px;
+    color:var(--muted); font-size:12px; font-weight:700; white-space:nowrap;
+  }
+  .dot{
+    width:9px; height:9px; border-radius:50%;
+    background:var(--red); box-shadow:0 0 0 4px rgba(248,113,113,.12);
+    transition:.2s;
+  }
+  .dot.on{background:var(--green); box-shadow:0 0 0 4px rgba(34,197,94,.14)}
+  .icon-btn{
+    border:1px solid var(--line); background:var(--panel);
+    border-radius:11px; padding:9px 13px; min-height:40px;
+    color:var(--muted); font-weight:700; font-size:13px;
+  }
+  .icon-btn:hover{border-color:var(--line2); color:var(--txt)}
+
+  .toolbar{
+    position:relative; z-index:20;
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:11px clamp(14px,3vw,34px);
+    background:rgba(7,12,22,.82); border-bottom:1px solid rgba(32,50,75,.7);
+    backdrop-filter:blur(12px);
+  }
+  .chips{display:flex; gap:7px; flex-wrap:wrap}
+  .chip{
+    border:1px solid var(--line); background:var(--panel);
+    color:var(--muted); border-radius:999px;
+    padding:7px 14px; font-size:13px; font-weight:800;
+  }
+  .chip.on{
+    color:#2a1a00; border-color:var(--gold);
+    background:linear-gradient(180deg,#fcd34d,#f59e0b);
+  }
+  .search{
+    margin-left:auto; min-width:180px; flex:1; max-width:380px;
+    display:flex; align-items:center; gap:8px;
+    padding:0 12px; min-height:40px;
+    border:1px solid var(--line); border-radius:11px; background:var(--panel);
+  }
+  .search span{color:var(--dim); font-size:15px}
+  .search input{
+    flex:1; min-width:0; border:0; outline:0; background:transparent;
+    padding:9px 0; font-size:14px;
+  }
+  .search input::placeholder{color:var(--dim)}
+  .total{color:var(--dim); font-size:12px; font-weight:700; white-space:nowrap}
+
+  main{
+    width:100%; max-width:1440px; margin:0 auto;
+    padding:18px clamp(14px,3vw,34px) 60px;
+    display:grid; gap:16px;
+  }
+  .livebar{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:11px 14px; border-radius:12px;
+    border:1px solid rgba(96,165,250,.32);
+    background:linear-gradient(90deg,rgba(37,99,235,.18),rgba(37,99,235,.05));
+    font-size:13px;
+  }
+  .livebar b{font-size:14px}
+  .livebar .tag{
+    color:#bfdbfe; background:rgba(96,165,250,.16);
+    border-radius:999px; padding:2px 9px; font-weight:800; font-size:11px;
+  }
+  .livebar .grow{flex:1}
+  .livebar .progress{color:var(--muted); font-variant-numeric:tabular-nums}
+
+  .hero{
+    position:relative; overflow:hidden;
+    border:1px solid rgba(245,158,11,.38); border-radius:18px;
+    background:
+      radial-gradient(680px 300px at 88% -20%, rgba(245,158,11,.15), transparent 65%),
+      linear-gradient(160deg,#14233a,#0d1726 70%);
+    box-shadow:0 22px 60px -34px rgba(0,0,0,.9);
+  }
+  .hero::before{
+    content:""; position:absolute; inset:0 auto 0 0; width:4px;
+    background:linear-gradient(180deg,var(--gold),transparent 80%);
+  }
+  .hero-head{
+    display:flex; align-items:flex-start; gap:16px;
+    padding:18px clamp(16px,2.4vw,26px) 13px;
+  }
+  .hero-head .grow{flex:1; min-width:0}
+  .kicker{
+    display:flex; align-items:center; gap:8px;
+    color:var(--gold); font-size:11px; font-weight:900; letter-spacing:.17em;
+  }
+  .kicker .pulse{
+    width:8px; height:8px; border-radius:50%; background:var(--gold);
+    animation:pulse 1.6s infinite;
+  }
+  @keyframes pulse{
+    0%,100%{box-shadow:0 0 0 0 rgba(251,191,36,.45)}
+    50%{box-shadow:0 0 0 7px rgba(251,191,36,0)}
+  }
+  .hero h2{
+    margin:5px 0 0; font-size:clamp(24px,3.2vw,38px); line-height:1.15;
+    font-weight:900; letter-spacing:.01em;
+  }
+  .hero-meta{
+    margin-top:7px; display:flex; gap:7px; flex-wrap:wrap; align-items:center;
+    color:var(--muted); font-size:13px;
+  }
+  .hero-meta .sep{color:var(--dim)}
+  .hero-meta .live-tag{
+    color:#86efac; background:rgba(34,197,94,.13);
+    border:1px solid rgba(34,197,94,.28);
+    border-radius:999px; padding:2px 9px; font-size:11px; font-weight:800;
+  }
+  .hero-stat{
+    flex:none; text-align:right; padding-top:3px;
+  }
+  .hero-stat b{
+    display:block; font:900 clamp(34px,4vw,50px)/1 ui-monospace,Consolas,monospace;
+    color:var(--gold); font-variant-numeric:tabular-nums;
+  }
+  .hero-stat span{display:block; color:var(--dim); font-size:11px; font-weight:700; margin-top:4px}
+
+  .table-wrap{overflow-x:auto}
+  table{width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums}
+  th,td{
+    padding:10px clamp(10px,1.6vw,16px);
+    text-align:left; border-top:1px solid rgba(43,67,99,.55);
+    font-size:14px;
+  }
+  thead th{
+    color:var(--dim); font-size:11px; font-weight:800; letter-spacing:.08em;
+    border-top:0; background:rgba(255,255,255,.02); white-space:nowrap;
+  }
+  th.num,td.num{text-align:center; width:64px}
+  th.result,td.result{text-align:right; white-space:nowrap}
+  td.result{
+    font:800 17px/1.2 ui-monospace,Consolas,monospace;
+    color:#d7e7ff;
+  }
+  tbody tr:first-child td{border-top:1px solid rgba(43,67,99,.75)}
+  tbody tr:hover{background:rgba(96,165,250,.045)}
+  .rank{
+    display:inline-flex; align-items:center; justify-content:center;
+    min-width:30px; height:30px; padding:0 7px; border-radius:9px;
+    background:rgba(148,163,184,.11); color:var(--muted);
+    font:900 14px/1 ui-monospace,Consolas,monospace; font-variant-numeric:tabular-nums;
+  }
+  .rank.m1{background:linear-gradient(180deg,#fde68a,#f59e0b); color:#3a2500; box-shadow:0 0 18px -4px rgba(251,191,36,.55)}
+  .rank.m2{background:linear-gradient(180deg,#f1f5f9,#94a3b8); color:#1f2937}
+  .rank.m3{background:linear-gradient(180deg,#f3bd94,#c2703c); color:#2d1406}
+  td.rank-cell{width:74px}
+  .who{display:flex; flex-direction:column; gap:1px; min-width:0}
+  .who b{font-size:15px; font-weight:800; letter-spacing:.01em}
+  .who small{color:var(--dim); font-size:11px}
+  .lane{
+    display:inline-block; min-width:22px; text-align:center;
+    color:var(--muted); font-weight:800;
+  }
+  .bib{color:var(--muted); font-family:ui-monospace,Consolas,monospace; font-size:12px}
+  .pb{color:var(--dim); font-size:10px; font-weight:700; margin-left:4px}
+
+  .list-head{
+    display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+    margin-top:4px; padding:0 2px;
+  }
+  .list-head h2{margin:0; font-size:16px; font-weight:900; letter-spacing:.04em}
+  .list-head span{color:var(--dim); font-size:12px}
+  .group{margin-top:2px}
+  .group-title{
+    display:flex; align-items:center; gap:10px;
+    padding:8px 2px 9px; color:var(--gold);
+    font-size:12px; font-weight:900; letter-spacing:.08em;
+  }
+  .group-title::after{
+    content:""; flex:1; height:1px;
+    background:linear-gradient(90deg,rgba(251,191,36,.28),transparent);
+  }
+  .cards{display:grid; gap:11px}
+  .card{
+    border:1px solid var(--line); border-radius:14px;
+    background:linear-gradient(170deg,rgba(19,33,53,.92),rgba(13,23,38,.92));
+    overflow:hidden;
+  }
+  .card-head{
+    display:flex; align-items:flex-start; gap:12px;
+    padding:13px clamp(13px,2vw,18px) 11px;
+    background:rgba(255,255,255,.018);
+    border-bottom:1px solid rgba(43,67,99,.4);
+  }
+  .card-head .grow{flex:1; min-width:0}
+  .card-head h3{
+    margin:0; font-size:16px; font-weight:900;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .card-meta{
+    margin-top:4px; display:flex; gap:6px; flex-wrap:wrap;
+    color:var(--muted); font-size:12px;
+  }
+  .card-meta .sep{color:var(--dim)}
+  .card-meta .live-tag{
+    color:#86efac; background:rgba(34,197,94,.12);
+    border-radius:999px; padding:1px 8px; font-size:10px; font-weight:800;
+  }
+  .card-count{
+    flex:none; color:var(--dim); font-size:11px; font-weight:700;
+    padding-top:3px; white-space:nowrap;
+  }
+  .card table th,.card table td{padding-top:8px; padding-bottom:8px}
+  .card td.result{font-size:15px}
+  .card .rank{height:26px; min-width:27px; font-size:12px}
+
+  .empty{
+    padding:56px 20px; text-align:center; color:var(--dim);
+    border:1px dashed var(--line2); border-radius:16px;
+    background:rgba(148,163,184,.025);
+  }
+  .empty b{display:block; color:var(--muted); font-size:17px; margin-bottom:6px}
+  .empty small{font-size:12px}
+  .error{
+    padding:10px 14px; border-radius:11px; font-size:12px;
+    border:1px solid rgba(248,113,113,.35); color:#fecaca;
+    background:rgba(248,113,113,.08);
+  }
+  footer{
+    max-width:1440px; margin:0 auto; padding:0 clamp(14px,3vw,34px) 28px;
+    color:var(--dim); font-size:11px; text-align:center;
+  }
+
+  @media (max-width:720px){
+    .top{gap:10px; padding-top:11px; padding-bottom:11px}
+    .clock{display:none}
+    .conn span:last-child{display:none}
+    .brand .sub{display:none}
+    .toolbar{padding-top:9px; padding-bottom:9px}
+    .search{margin-left:0; max-width:none; order:3; flex-basis:100%}
+    .total{margin-left:auto}
+    .hero-head{padding-top:15px}
+    .hero-stat b{font-size:34px}
+    th.num,td.num:nth-child(2){display:none}
+    th.bib,td.bib{display:none}
+    th,td{padding-left:10px; padding-right:10px}
+    .who b{font-size:14px}
+    td.result{font-size:15px}
+    .card-count{display:none}
+  }
+  @media (min-width:1500px){
+    body{font-size:16px}
+    th,td{padding-top:12px; padding-bottom:12px; font-size:15px}
+    td.result{font-size:19px}
+    .who b{font-size:16px}
+    .card-head h3{font-size:18px}
+  }
+  @media print{
+    body{background:#fff; color:#111}
+    .top,.toolbar,.search,.icon-btn,.livebar,footer{display:none!important}
+    .hero,.card{border-color:#ccc; background:#fff; box-shadow:none}
+    .hero h2,.card-head h3,.who b,td.result{color:#111}
+    .hero-meta,.card-meta,.who small,.bib,.lane{color:#555}
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <div class="eyebrow">SPORTS MEET · LIVE RESULTS</div>
+    <h1 id="title">成绩公示</h1>
+    <div class="sub" id="subtitle">等待成绩数据…</div>
+  </div>
+  <div class="top-side">
+    <div class="conn"><span class="dot" id="dot"></span><span id="connText">连接中…</span></div>
+    <div class="clock" id="clock">--:--:--</div>
+    <button class="icon-btn" id="refresh" title="刷新成绩">刷新</button>
+    <button class="icon-btn" id="fs" title="全屏显示">全屏</button>
+  </div>
+</header>
+
+<div class="toolbar">
+  <div class="chips" id="chips"></div>
+  <label class="search">
+    <span>⌕</span>
+    <input id="search" type="search" placeholder="搜索项目 / 姓名 / 班级 / 号码" autocomplete="off">
+  </label>
+  <span class="total" id="total">共 0 项</span>
+</div>
+
+<main>
+  <div id="error" class="error" hidden></div>
+  <div id="livebar" class="livebar" hidden></div>
+  <section id="hero" hidden></section>
+  <div class="list-head" id="listHead" hidden>
+    <h2>全部成绩</h2>
+    <span id="listHint">按项目顺序 · 最新在前</span>
+  </div>
+  <div id="groups"></div>
+  <div id="empty" class="empty" hidden></div>
+</main>
+
+<footer id="footer">成绩自动同步 · 最终成绩以裁判长公布为准</footer>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const $ = (s) => document.querySelector(s);
+  const state = {
+    data: null,
+    cat: '全部',
+    query: '',
+    loading: false,
+    queued: false,
+    error: '',
+    updatedAt: 0,
+  };
+
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+  const text = (v) => String(v ?? '').trim();
+
+  function categoryOf(e) {
+    const c = text(e?.category);
+    if (c) return c;
+    const n = text(e?.eventName);
+    if (n.includes('女子')) return '女子';
+    if (n.includes('男子')) return '男子';
+    if (n.includes('混合')) return '混合';
+    return '其他';
+  }
+
+  function placeNo(place) {
+    const m = text(place).match(/\d+/);
+    return m ? Number(m[0]) : 0;
+  }
+
+  function metaBits(e) {
+    return [categoryOf(e), text(e.round), text(e.heat), text(e.time), text(e.sessionLabel)]
+      .filter(Boolean);
+  }
+
+  function metaHtml(e) {
+    return metaBits(e).map((v, i) => (
+      `${i ? '<span class="sep">·</span>' : ''}<span>${esc(v)}</span>`
+    )).join('');
+  }
+
+  function athleteRows(athletes) {
+    return athletes.map((a) => {
+      const place = placeNo(a.place);
+      const medal = place >= 1 && place <= 3 ? ` m${place}` : '';
+      const name = text(a.name) || text(a.unit) || '—';
+      const unit = text(a.name) ? text(a.unit) : '接力 / 单位';
+      return `<tr>
+        <td class="rank-cell"><span class="rank${medal}">${place ? place : esc(text(a.place) || '—')}</span></td>
+        <td class="num"><span class="lane">${a.lane || '—'}</span></td>
+        <td>
+          <div class="who">
+            <b>${esc(name)}${a.pb ? `<span class="pb">PB ${esc(a.pb)}</span>` : ''}</b>
+            ${unit ? `<small>${esc(unit)}</small>` : ''}
+          </div>
+        </td>
+        <td class="bib">${esc(text(a.bib) || '—')}</td>
+        <td class="result">${esc(text(a.result) || '—')}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function tableHtml(athletes, compact) {
+    return `<div class="table-wrap"><table class="${compact ? 'compact' : ''}">
+      <thead><tr>
+        <th>名次</th><th class="num">道次</th><th>姓名 / 单位</th><th class="bib">号码</th><th class="result">成绩</th>
+      </tr></thead>
+      <tbody>${athleteRows(athletes)}</tbody>
+    </table></div>`;
+  }
+
+  function entryKey(e) {
+    return `${e.index}|${e.eventName}|${e.round}|${e.heat}`;
+  }
+
+  function pickHero(data) {
+    const current = data.current;
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    if (current && current.resultCount > 0) return current;
+    // 没有当前项目成绩时，取节目单里最近一节已出成绩的
+    for (let i = entries.length - 1; i >= 0; i -= 1) {
+      if (entries[i].resultCount > 0) return entries[i];
+    }
+    return null;
+  }
+
+  function renderLiveBar(current, hero) {
+    const el = $('#livebar');
+    if (!current) { el.hidden = true; return; }
+    const heroIsCurrent = hero && hero.live
+      && entryKey(hero) === entryKey(current);
+    if (heroIsCurrent) { el.hidden = true; return; }
+    const total = Number(current.count) || 0;
+    const done = Number(current.resultCount) || 0;
+    el.innerHTML = `<span class="tag">比赛中</span>
+      <b>${esc(current.eventName)}</b>
+      <span>${esc(metaBits(current).filter(v => v !== categoryOf(current)).join(' · '))}</span>
+      <span class="grow"></span>
+      <span class="progress">${total ? `已出成绩 ${done}/${total}` : '等待名册'}</span>`;
+    el.hidden = false;
+  }
+
+  function renderHero(hero) {
+    const el = $('#hero');
+    if (!hero) { el.hidden = true; return; }
+    const live = hero.live
+      ? '<span class="live-tag">进行中</span>'
+      : '';
+    el.innerHTML = `
+      <div class="hero-head">
+        <div class="grow">
+          <div class="kicker"><span class="pulse"></span>最新成绩</div>
+          <h2>${esc(hero.eventName)}</h2>
+          <div class="hero-meta">${metaHtml(hero)}${live}</div>
+        </div>
+        <div class="hero-stat">
+          <b>${hero.resultCount}</b>
+          <span>${hero.count > hero.resultCount ? `已出成绩 / 共 ${hero.count} 人` : '人已出成绩'}</span>
+        </div>
+      </div>
+      ${tableHtml(hero.athletes, false)}`;
+    el.hidden = false;
+  }
+
+  function matchesFilters(e) {
+    const cat = state.cat;
+    if (cat !== '全部' && categoryOf(e) !== cat) return false;
+    const q = state.query.trim().toLowerCase();
+    if (!q) return true;
+    const hay = [
+      e.eventName, e.category, e.round, e.heat, e.sessionLabel, e.time,
+      ...(e.athletes || []).flatMap(a => [a.name, a.unit, a.bib, a.result, a.place]),
+    ].join(' ').toLowerCase();
+    return hay.includes(q);
+  }
+
+  function renderChips(entries) {
+    const cats = ['全部'];
+    for (const e of entries) {
+      const c = categoryOf(e);
+      if (c && !cats.includes(c)) cats.push(c);
+    }
+    if (!cats.includes(state.cat)) state.cat = '全部';
+    $('#chips').innerHTML = cats.map(c => (
+      `<button class="chip${c === state.cat ? ' on' : ''}" data-cat="${esc(c)}">${esc(c)}</button>`
+    )).join('');
+  }
+
+  function renderGroups(hero) {
+    const data = state.data;
+    const entries = Array.isArray(data?.entries) ? data.entries : [];
+    const heroKey = hero ? entryKey(hero) : '';
+    const archive = entries
+      .filter(e => e.resultCount > 0 && entryKey(e) !== heroKey)
+      .sort((a, b) => b.index - a.index)
+      .filter(matchesFilters);
+
+    const wrap = $('#groups');
+    const empty = $('#empty');
+    const head = $('#listHead');
+
+    if (!entries.length) {
+      head.hidden = true;
+      wrap.innerHTML = '';
+      empty.hidden = false;
+      empty.innerHTML = hero
+        ? '<b>本轮成绩已在上方展示</b><small>后续项目出成绩后会自动出现在这里。</small>'
+        : '<b>还没有已公布的成绩</b><small>比赛开始、裁判录入名次和成绩后，这里会自动更新。</small>';
+      return;
+    }
+    if (!archive.length) {
+      head.hidden = archive.length === 0 && !state.query && state.cat === '全部';
+      wrap.innerHTML = '';
+      empty.hidden = false;
+      empty.innerHTML = state.query || state.cat !== '全部'
+        ? '<b>没有匹配的成绩</b><small>换个项目、姓名或班级试试。</small>'
+        : '<b>本轮成绩已在上方展示</b><small>后续项目出成绩后会自动出现在这里。</small>';
+      return;
+    }
+
+    head.hidden = false;
+    empty.hidden = true;
+    const groups = new Map();
+    for (const e of archive) {
+      const label = text(e.sessionLabel) || '成绩公告';
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label).push(e);
+    }
+    wrap.innerHTML = Array.from(groups.entries()).map(([label, list]) => `
+      <section class="group">
+        <div class="group-title">${esc(label)}</div>
+        <div class="cards">${list.map(e => `
+          <article class="card">
+            <header class="card-head">
+              <div class="grow">
+                <h3>${esc(e.eventName)}</h3>
+                <div class="card-meta">${metaHtml(e)}${e.live ? '<span class="live-tag">进行中</span>' : ''}</div>
+              </div>
+              <div class="card-count">${e.resultCount} 人</div>
+            </header>
+            ${tableHtml(e.athletes, true)}
+          </article>`).join('')}
+        </div>
+      </section>`).join('');
+  }
+
+  function updateTotal() {
+    const entries = Array.isArray(state.data?.entries) ? state.data.entries : [];
+    $('#total').textContent = `共 ${entries.length} 项成绩`;
+  }
+
+  function render() {
+    const data = state.data;
+    if (!data) return;
+    const meet = data.meet || {};
+    const title = text(meet.shortName) || text(data.title) || '成绩公示';
+    $('#title').textContent = title;
+    const sub = [meet.school || '', meet.dateRange || '', meet.venue || ''].filter(Boolean).join(' · ');
+    $('#subtitle').textContent = sub || '成绩自动同步';
+
+    const hero = pickHero(data);
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    renderChips(entries);
+    renderLiveBar(data.current, hero);
+    renderHero(hero);
+    renderGroups(hero);
+    updateTotal();
+
+    const err = $('#error');
+    if (state.error) {
+      err.textContent = `刷新失败：${state.error}（页面会继续自动重试）`;
+      err.hidden = false;
+    } else {
+      err.hidden = true;
+    }
+    const ts = state.updatedAt || Date.now();
+    $('#footer').textContent = `成绩自动同步 · 更新于 ${new Date(ts).toLocaleTimeString('zh-CN', { hour12: false })} · 最终成绩以裁判长公布为准`;
+  }
+
+  async function load() {
+    if (state.loading) { state.queued = true; return; }
+    state.loading = true;
+    try {
+      const r = await fetch('/api/results', { cache: 'no-store' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      if (!d || d.ok === false) throw new Error(d?.error || '数据异常');
+      state.data = d;
+      state.error = '';
+      state.updatedAt = Date.now();
+      render();
+    } catch (e) {
+      state.error = e?.message || '网络错误';
+      render();
+    } finally {
+      state.loading = false;
+      if (state.queued) {
+        state.queued = false;
+        setTimeout(load, 200);
+      }
+    }
+  }
+
+  let loadTimer = null;
+  function scheduleLoad() {
+    if (loadTimer) clearTimeout(loadTimer);
+    loadTimer = setTimeout(load, 350);
+  }
+
+  function tickClock() {
+    $('#clock').textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  }
+
+  function bind() {
+    $('#chips').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-cat]');
+      if (!b) return;
+      state.cat = b.dataset.cat || '全部';
+      render();
+    });
+    $('#search').addEventListener('input', (e) => {
+      state.query = e.target.value || '';
+      render();
+    });
+    $('#refresh').addEventListener('click', () => load());
+    $('#fs').addEventListener('click', async () => {
+      try {
+        if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
+        else await document.exitFullscreen?.();
+      } catch { /* 部分浏览器禁止全屏，忽略 */ }
+    });
+
+    if (window.io) {
+      const socket = window.io();
+      socket.on('connect', () => {
+        $('#dot').classList.add('on');
+        $('#connText').textContent = '已连接';
+        load();
+      });
+      socket.on('disconnect', () => {
+        $('#dot').classList.remove('on');
+        $('#connText').textContent = '已断开';
+      });
+      socket.on('scoreboard:update', scheduleLoad);
+    } else {
+      $('#connText').textContent = '轮询模式';
+    }
+  }
+
+  bind();
+  tickClock();
+  setInterval(tickClock, 1000);
+  setInterval(load, 15000);
+  load();
+})();
+</script>
+</body>
+</html>

@@ -145,6 +145,44 @@ const cases = [
       introTitle: '选手介绍', athletes: [{ lane: 1, name: '', place: '', result: '' }],
     },
   },
+  {
+    // 成绩条总开关关着时，全屏成绩也必须能烧进成片
+    name: '全屏成绩公示 · 12 人两栏',
+    config: {
+      enabled: false,
+      fullResultsVisible: true,
+      fullResultsSnapshot: {
+        eventName: '男子100米', category: '男子', round: '决赛', heat: '第1组',
+        time: '10:30', resultCount: 12,
+        athletes: Array.from({ length: 12 }, (_, i) => ({
+          lane: i + 1,
+          name: `选手${i + 1}号`,
+          unit: `高一${i + 1}班`,
+          bib: `10${20 + i}`,
+          place: String(i + 1),
+          result: `11.${20 + i}`,
+        })),
+      },
+    },
+  },
+  {
+    name: '全屏成绩公示 · 30 人三栏',
+    config: {
+      enabled: true,
+      fullResultsVisible: true,
+      fullResultsSnapshot: {
+        eventName: '女子800米', category: '女子', round: '预赛', sessionLabel: '10月28日 上午',
+        resultCount: 30,
+        athletes: Array.from({ length: 30 }, (_, i) => ({
+          lane: (i % 8) + 1,
+          name: `运动员${i + 1}`,
+          unit: `高二${(i % 9) + 1}班`,
+          place: String(i + 1),
+          result: `2:2${i % 10}.${10 + (i % 80)}`,
+        })),
+      },
+    },
+  },
 ];
 
 const sizes = [

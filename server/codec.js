@@ -98,11 +98,12 @@ function parseSpsDimensions(nal) {
 
   let chromaFormatIdc = 1;
   let separateColourPlane = 0;
+  let bitDepthLumaMinus8 = 0;
 
   if (HIGH_PROFILE_IDC.has(profileIdc)) {
     chromaFormatIdc = r.ue();
     if (chromaFormatIdc === 3) separateColourPlane = r.bit();
-    r.ue(); // bit_depth_luma_minus8
+    bitDepthLumaMinus8 = r.ue();
     r.ue(); // bit_depth_chroma_minus8
     r.bit(); // qpprime_y_zero_transform_bypass_flag
     if (r.bit()) {
@@ -156,7 +157,12 @@ function parseSpsDimensions(nal) {
   const height = (2 - frameMbsOnly) * heightInMapUnits * 16 - cropUnitY * (cropTop + cropBottom);
 
   if (!width || !height || width > 16384 || height > 16384) return null;
-  return { width, height };
+  return {
+    width,
+    height,
+    bitDepth: 8 + bitDepthLumaMinus8,
+    chromaFormatIdc,
+  };
 }
 
 /**
@@ -196,8 +202,11 @@ function createStreamInfo() {
   return {
     videoCodec: null,
     audioCodec: null,
+    audioFourCC: null,
     videoWidth: 0,
     videoHeight: 0,
+    videoBitDepth: 0,
+    videoChromaFormat: 0,
     videoFramerate: 0,
     videoFrames: 0,
     windowStart: 0,
@@ -223,6 +232,8 @@ function applyPacket(info, packet) {
       if (dims) {
         info.videoWidth = dims.width;
         info.videoHeight = dims.height;
+        info.videoBitDepth = dims.bitDepth || 8;
+        info.videoChromaFormat = dims.chromaFormatIdc || 1;
       }
     }
 
@@ -238,7 +249,12 @@ function applyPacket(info, packet) {
       }
     }
   } else if (packet.codec_type === 8) {
-    info.audioCodec = data[0] >> 4; // FLV SoundFormat，10=AAC
+    const soundFormat = data[0] >> 4; // FLV SoundFormat，10=AAC / 2=MP3 / 9=enhanced
+    info.audioCodec = soundFormat;
+    if (soundFormat === 9 && data.length >= 5) {
+      // enhanced FLV audio：FourCC 在 [1..4]（Opus / fLaC 等）
+      info.audioFourCC = data.subarray(1, 5).toString('latin1').toLowerCase();
+    }
   }
 }
 

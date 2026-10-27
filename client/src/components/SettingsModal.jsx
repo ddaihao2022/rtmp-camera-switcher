@@ -30,6 +30,7 @@ const WM_DEFAULT = {
 function WatermarkSection() {
   const [cfg, setCfg] = useState(WM_DEFAULT);
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
   const fileRef = useRef(null);
   const socketRef = useRef(null);
 
@@ -45,12 +46,23 @@ function WatermarkSection() {
     const next = { ...cfg, ...patch };
     setCfg(next);
     setSaving(true);
+    setErr('');
     try {
-      await fetch(`${API}/api/watermark`, {
+      const r = await fetch(`${API}/api/watermark`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(next),
       });
+      if (!r.ok) {
+        let detail = '';
+        try {
+          const d = await r.json();
+          detail = d?.error || '';
+        } catch {}
+        setErr(`水印未保存（HTTP ${r.status}）${detail ? '：' + detail : ''}`);
+      }
+    } catch (e) {
+      setErr('水印未保存：' + (e?.message || '网络错误'));
     } finally {
       setSaving(false);
     }
@@ -72,6 +84,10 @@ function WatermarkSection() {
         🖼 水印
         {saving && <span className="settings-saving"> ●</span>}
       </div>
+
+      {err && (
+        <p className="settings-muted" style={{ color: '#fca5a5' }}>{err}</p>
+      )}
 
       <div className="settings-row">
         <label className="settings-toggle">

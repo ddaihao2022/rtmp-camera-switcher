@@ -129,6 +129,99 @@ test('H.264 包完全不受影响', () => {
   assert.equal(packet.data, avc, '同一个 Buffer 未被替换');
 });
 
+test('splitNals 能识别 Annex-B 起始码（GStreamer 常见）', () => {
+  const payload = Buffer.concat([
+    Buffer.from([0, 0, 0, 1]), VPS,
+    Buffer.from([0, 0, 1]), SPS,
+    Buffer.from([0, 0, 0, 1]), PPS,
+    Buffer.from([0, 0, 1, 0x26, 0x01, 0xaf, 0x00]),
+  ]);
+  const { annexB, nals } = hf.splitNals(payload);
+  assert.equal(annexB, true);
+  assert.equal(nals.length, 4);
+  assert.equal(nals[0].toString('hex'), VPS.toString('hex'));
+  assert.equal(nals[1].toString('hex'), SPS.toString('hex'));
+  assert.equal(nals[2].toString('hex'), PPS.toString('hex'));
+});
+
+test('fixer 把 legacy + Annex-B 关键帧归一化成 4 字节长度前缀', () => {
+  const fixer = hf.createFixer();
+  const payload = Buffer.concat([
+    Buffer.from([0, 0, 0, 1]), VPS,
+    Buffer.from([0, 0, 1]), SPS,
+    Buffer.from([0, 0, 0, 1]), PPS,
+    Buffer.from([0, 0, 1, 0x26, 0x01, 0xaf, 0x00]),
+  ]);
+  const body = Buffer.alloc(5 + payload.length);
+  body[0] = 0x1c;
+  body[1] = 0x01;
+  payload.copy(body, 5);
+  const packet = { codec_type: 9, flags: 4, dts: 0, data: body, size: body.length };
+  assert.equal(fixer.process(packet, () => {}), true);
+  assert.equal(packet.data[0], 0x91);
+  assert.equal(packet.data.readUInt32BE(8), VPS.length, '第一个 NAL 前应是 4 字节长度');
+  assert.equal(packet.data.subarray(12, 12 + VPS.length).toString('hex'), VPS.toString('hex'));
+});
+
+test('fixer 兼容 4 字节 legacy 头（GStreamer 少写 CTS）', () => {
+  const fixer = hf.createFixer();
+  const chunks = [];
+  for (const nal of [VPS, SPS, PPS, Buffer.from([0x26, 0x01, 0xaf, 0x00])]) {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(nal.length, 0);
+    chunks.push(len, Buffer.from(nal));
+  }
+  const payload = Buffer.concat(chunks);
+  const body = Buffer.alloc(4 + payload.length);
+  body[0] = 0x1c;
+  body[1] = 0x01;
+  payload.copy(body, 4);
+  const packet = { codec_type: 9, flags: 4, dts: 0, data: body, size: body.length };
+  assert.equal(fixer.process(packet, () => {}), true);
+  assert.equal(packet.data[0], 0x91);
+  assert.equal(packet.data.readUInt32BE(8), VPS.length);
+  assert.equal(packet.data.subarray(12, 12 + VPS.length).toString('hex'), VPS.toString('hex'));
+});
+
+test('fixer 把 enhanced hvc1 里的 Annex-B 帧也归一化', () => {
+  const fixer = hf.createFixer();
+  const payload = Buffer.concat([
+    Buffer.from([0, 0, 0, 1]), VPS,
+    Buffer.from([0, 0, 1]), SPS,
+    Buffer.from([0, 0, 0, 1]), PPS,
+    Buffer.from([0, 0, 1, 0x26, 0x01, 0xaf, 0x00]),
+  ]);
+  const body = Buffer.alloc(8 + payload.length);
+  body[0] = 0x91; // enhanced keyframe + coded frames
+  body.write('hvc1', 1, 'latin1');
+  payload.copy(body, 8);
+  const packet = { codec_type: 9, flags: 3, dts: 0, data: body, size: body.length };
+  assert.equal(fixer.process(packet, () => {}), true);
+  assert.equal(packet.data[0], 0x91);
+  assert.equal(packet.data.subarray(1, 5).toString('latin1'), 'hvc1');
+  assert.equal(packet.data.readUInt32BE(8), VPS.length);
+  assert.equal(packet.data.length, 8 + 4 * 4 + VPS.length + SPS.length + PPS.length + 4);
+});
+
+test('fixer 把 enhanced 里的 Annex-B sequence header 合成标准 hvcC', () => {
+  const fixer = hf.createFixer();
+  const payload = Buffer.concat([
+    Buffer.from([0, 0, 0, 1]), VPS,
+    Buffer.from([0, 0, 1]), SPS,
+    Buffer.from([0, 0, 0, 1]), PPS,
+  ]);
+  const body = Buffer.alloc(5 + payload.length);
+  body[0] = 0x90; // enhanced keyframe + sequence header
+  body.write('hvc1', 1, 'latin1');
+  payload.copy(body, 5);
+  const packet = { codec_type: 9, flags: 2, dts: 0, data: body, size: body.length };
+  assert.equal(fixer.process(packet, () => {}), true);
+  assert.equal(packet.data[0], 0x90);
+  assert.equal(packet.data.subarray(1, 5).toString('latin1'), 'hvc1');
+  assert.equal(packet.data.subarray(5).toString('hex'), EXPECTED_HVCC);
+  assert.equal(packet.flags, 2);
+});
+
 test('buildSequenceHeaderPacket 产出 0x90 + hvc1 + hvcC，flags=2', () => {
   const hvcC = hf.buildHvcC(VPS, SPS, PPS);
   const pkt = hf.buildSequenceHeaderPacket(hvcC, 1234);

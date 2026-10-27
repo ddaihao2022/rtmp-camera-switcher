@@ -13,14 +13,19 @@ function StreamList({ streams, selectedStream, outputStream, onStreamSelect, onS
     <div className="stream-list">
       {streams.map((stream, i) => {
         const hotkey = indexOffset + i + 1;
-        const codecLabel = getVideoCodecLabel(stream);
+        const codecLabel = stream.videoCodecLabel || getVideoCodecLabel(stream);
         const codecHint = codecLabel !== 'unknown' ? `编码: ${codecLabel}` : null;
 
         // 编码兼容徽标：转码就绪 / 转码中 / 转码失败 / 不兼容
         let codecTag = null;
         if (stream.type !== 'local') {
           if (stream.transcodeStatus === 'ready') {
-            codecTag = { text: '已转码 H.264', color: '#22c55e', border: 'rgba(34,197,94,0.4)', bg: 'rgba(34,197,94,0.12)' };
+            codecTag = {
+              text: stream.transcodeMode === 'hw' ? 'GPU 转码 H.264'
+                : stream.transcodeMode === 'audio' ? '音频转 AAC'
+                  : '已转码 H.264',
+              color: '#22c55e', border: 'rgba(34,197,94,0.4)', bg: 'rgba(34,197,94,0.12)',
+            };
           } else if (!isBrowserPlayableStream(stream)) {
             if (stream.transcodeStatus === 'pending') {
               codecTag = { text: '转码中…', color: '#3b82f6', border: 'rgba(59,130,246,0.4)', bg: 'rgba(59,130,246,0.12)' };
@@ -49,7 +54,14 @@ function StreamList({ streams, selectedStream, outputStream, onStreamSelect, onS
               <h3>{stream.streamKey}</h3>
               <p className="stream-time">{new Date(stream.startTime).toLocaleTimeString('zh-CN')}</p>
               {codecHint && <p className="stream-time">{codecHint}</p>}
-              <span className="stream-status online">在线</span>
+              <span
+                className="stream-status online"
+                style={stream.status === 'stalled'
+                  ? { color: '#f59e0b', borderColor: 'rgba(245,158,11,0.45)', background: 'rgba(245,158,11,0.12)' }
+                  : undefined}
+              >
+                {stream.status === 'stalled' ? '无画面' : '在线'}
+              </span>
               {outputStream === stream.streamKey && <span className="output-badge">📡 输出中</span>}
               {codecTag && (
                 <span

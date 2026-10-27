@@ -205,7 +205,7 @@ export function parseRoster(text, opts = {}) {
 export function inferEventKind(name) {
   const n = String(name || '');
   if (/接力/.test(n)) return 'relay';
-  if (/(跳高|跳远|三级跳|撑竿|撑杆|铅球|铁饼|标枪|链球|全能)/.test(n)) return 'field';
+  if (/(跳高|跳远|三级跳|撑竿|撑杆|铅球|实心球|铁饼|标枪|链球|全能)/.test(n)) return 'field';
   if (/(5000|10000|3000|马拉松|竞走|越野)/.test(n)) return 'long';
   if (/(800|1500|英里|mile)/i.test(n)) return 'middle';
   return 'sprint';
@@ -249,7 +249,7 @@ export function isProgramTitle(line) {
   if (/^(#|\/\/|==+|-{2,}|\*|【|\[)/.test(t)) return true;
   if (!/^(男子|女子|混合)/.test(t)) return false;
   if (/\d{1,2}[:.]\d{1,2}/.test(t)) return false;   // 含成绩 → 是数据行
-  return /(米|接力|跳高|跳远|三级跳|撑竿|撑杆|铅球|铁饼|标枪|链球|全能)/.test(t);
+  return /(米|接力|跳高|跳远|三级跳|撑竿|撑杆|铅球|实心球|铁饼|标枪|链球|全能|马拉松)/.test(t);
 }
 
 /**

@@ -85,6 +85,118 @@ function splitLengthPrefixedNals(buf, offset = 0) {
   return nals;
 }
 
+/**
+ * 拆 Annex-B（00 00 01 / 00 00 00 01 起始码）的 NAL 负载。
+ * GStreamer 的 flvmux 推 HEVC 时经常直接把 Annex-B 塞进 VideoTag，
+ * 而不是 AVCC 的 4 字节长度前缀；不转换就会被 ffmpeg 当成超大 NAL 长度。
+ * @param {Buffer} buf
+ * @returns {Buffer[]}
+ */
+function splitAnnexBNals(buf) {
+  const nals = [];
+  let start = -1;
+  let i = 0;
+  while (i + 2 < buf.length) {
+    if (buf[i] === 0 && buf[i + 1] === 0 && buf[i + 2] === 1) {
+      // 4 字节起始码 00 00 00 01 会在第二个 00 处命中；
+      // 前面那个 00 也属于起始码，不能算进上一个 NAL 的尾部。
+      let scStart = i;
+      if (i > 0 && buf[i - 1] === 0) scStart = i - 1;
+      if (start >= 0 && scStart > start) nals.push(buf.subarray(start, scStart));
+      i += 3;
+      start = i;
+    } else {
+      i += 1;
+    }
+  }
+  if (start >= 0 && start < buf.length) nals.push(buf.subarray(start));
+  return nals.filter((n) => n.length > 0);
+}
+
+/**
+ * 自动识别 Annex-B / AVCC，返回不带前缀的 NAL 列表。
+ * @param {Buffer} buf
+ * @returns {{ nals: Buffer[], annexB: boolean }}
+ */
+function splitNals(buf) {
+  const annexB = buf.length >= 4
+    && ((buf[0] === 0 && buf[1] === 0 && buf[2] === 1)
+      || (buf[0] === 0 && buf[1] === 0 && buf[2] === 0 && buf[3] === 1));
+  return {
+    annexB,
+    nals: annexB ? splitAnnexBNals(buf) : splitLengthPrefixedNals(buf, 0),
+  };
+}
+
+/** 把 NAL 列表重新打包成 4 字节大端长度前缀（enhanced-RTMP 要求） */
+function toLengthPrefixed(nals) {
+  const parts = [];
+  for (const nal of nals) {
+    if (!nal || !nal.length) continue;
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(nal.length, 0);
+    parts.push(len, Buffer.from(nal));
+  }
+  return Buffer.concat(parts);
+}
+
+function isPlausibleNals(nals) {
+  if (!nals.length) return false;
+  let vcl = 0;
+  let paramSets = 0;
+  for (const nal of nals) {
+    if (!nal || nal.length < 2) return false;
+    const t = hevcNalType(nal);
+    if (t < 0 || t > 63) return false;
+    if (t <= 31) vcl += 1;
+    if (t === 32 || t === 33 || t === 34) paramSets += 1;
+  }
+  return vcl > 0 || paramSets > 0;
+}
+
+/**
+ * 不同推流端的 FLV VideoTag 头长度不一致（标准 5 字节、GStreamer 有时只留 4 字节、
+ * enhanced 编码帧 8 字节）。这里按候选偏移逐个试，选 NAL 结构最合理的那个，
+ * 避免“差一个字节”就把整个 NAL 长度读错。
+ */
+function findNalPayload(data, offsets) {
+  for (const off of offsets) {
+    if (off < 0 || off >= data.length) continue;
+    const payload = data.subarray(off);
+    const parsed = splitNals(payload);
+    if (!isPlausibleNals(parsed.nals)) continue;
+    if (!parsed.annexB) {
+      // AVCC：长度前缀应基本覆盖整个 payload；差太多说明偏移选错了
+      const covered = parsed.nals.reduce((s, n) => s + 4 + n.length, 0);
+      if (payload.length - covered > 8) continue;
+    }
+    return { offset: off, ...parsed };
+  }
+  return null;
+}
+
+/** 给 enhanced-RTMP 编码帧套 8 字节头（payload 已长度前缀化） */
+function buildEnhancedFrame(data, isKey, payload) {
+  const out = Buffer.alloc(8 + payload.length);
+  out[0] = 0x80 | ((isKey ? 1 : 2) << 4) | 1;
+  out.write(FOURCC_HEVC, 1, 'latin1');
+  // 原 cts 在 [2..4]，实时采集恒为 0，照抄即可
+  out[5] = data[2];
+  out[6] = data[3];
+  out[7] = data[4];
+  payload.copy(out, 8);
+  return out;
+}
+
+/** 给 enhanced-RTMP sequence header 套 5 字节头 */
+function buildEnhancedSeq(hvcC) {
+  const out = Buffer.alloc(5 + hvcC.length);
+  out[0] = 0x90; // keyframe + sequence header
+  out.write(FOURCC_HEVC, 1, 'latin1');
+  hvcC.copy(out, 5);
+  return out;
+}
+
 /** HEVC NAL 类型：32=VPS 33=SPS 34=PPS */
 function hevcNalType(nal) {
   if (!nal || nal.length < 2) return -1;
@@ -205,27 +317,10 @@ function isLegacyHevc(data) {
   return Boolean(data && data.length >= 6 && (data[0] & 0x80) === 0 && (data[0] & 0x0f) === 12);
 }
 
-/**
- * 改写成 enhanced-RTMP 头
- * @param {Buffer} data 原始 VideoTag body
- * @param {number} payloadOffset 原始负载起点（legacy 为 5）
- * @param {boolean} isKeyFrame
- * @param {number} packetType 0=sequence header 1=coded frames
- */
-function toEnhanced(data, payloadOffset, isKeyFrame, packetType) {
-  const payload = data.subarray(payloadOffset);
-  const headerLen = packetType === 0 ? 5 : 8;
-  const out = Buffer.alloc(headerLen + payload.length);
-  out[0] = 0x80 | ((isKeyFrame ? 1 : 2) << 4) | packetType;
-  out.write(FOURCC_HEVC, 1, 'latin1');
-  if (packetType === 1) {
-    // 原 cts 在 [2..4]，这里照抄，实时采集恒为 0
-    out[5] = data[2];
-    out[6] = data[3];
-    out[7] = data[4];
-  }
-  payload.copy(out, headerLen);
-  return out;
+/** 是否为 enhanced-RTMP 的 hvc1 VideoTag body */
+function isEnhancedHevc(data) {
+  return Boolean(data && data.length >= 6 && (data[0] & 0x80) === 0x80
+    && data.toString('latin1', 1, 5) === FOURCC_HEVC);
 }
 
 /**
@@ -235,6 +330,7 @@ function createFixer() {
   let hvcC = null;
   let dims = null;
   let logged = false;
+  let loggedFormat = false;
 
   return {
     get hvcC() {
@@ -250,17 +346,63 @@ function createFixer() {
      * @returns {boolean} 是否改写过
      */
     process(packet, emit) {
-      if (!packet || packet.codec_type !== 9 || !isLegacyHevc(packet.data)) return false;
+      if (!packet || packet.codec_type !== 9) return false;
 
       const data = packet.data;
+
+      // 已经是 enhanced-RTMP hvc1：兼容两类异常推流端
+      //   ① 编码帧用 Annex-B 起始码；② sequence header 用 Annex-B 参数集
+      if (isEnhancedHevc(data)) {
+        const enhancedType = data[0] & 0x0f; // 0=sequence header 1=coded frames
+
+        if (enhancedType === 0) {
+          const found = findNalPayload(data, [5, 4, 6]);
+          if (!found) return false; // 已经是标准 hvcC，保持原样
+          const sets = pickParamSets(found.nals);
+          if (!sets) return false;
+          const seq = buildHvcC(sets.vps, sets.sps, sets.pps);
+          const next = buildEnhancedSeq(seq);
+          packet.data = next;
+          packet.size = next.length;
+          packet.flags = 2;
+          return true;
+        }
+
+        if (enhancedType !== 1) return false;
+        const found = findNalPayload(data, [8, 7, 9]);
+        if (!found) return false;
+        if (!loggedFormat && (found.offset !== 8 || found.annexB)) {
+          loggedFormat = true;
+          console.log(`[hevc-fix] 检测到非标准 enhanced HEVC：头偏移 ${found.offset}，${found.annexB ? 'Annex-B' : 'AVCC'}，已归一化`);
+        }
+        const isKey = ((data[0] >> 4) & 0x01) === 1;
+        const next = buildEnhancedFrame(data, isKey, toLengthPrefixed(found.nals));
+        packet.data = next;
+        packet.size = next.length;
+        packet.flags = isKey ? 3 : 4;
+        return true;
+      }
+
+      if (!isLegacyHevc(data)) return false;
+
       const frameType = (data[0] >> 4) & 0x07;
       const packetType = data[1];
 
       if (packetType === 0) {
-        // 万一带了 sequence header，直接把它当 hvcC 用（仍是 legacy 封装）
-        const payload = data.subarray(5);
-        if (payload.length > 20) hvcC = Buffer.from(payload);
-        const next = toEnhanced(data, 5, true, 0);
+        // legacy sequence header：可能直接是 hvcC，也可能是 Annex-B 参数集
+        let seq = null;
+        for (const off of [5, 4]) {
+          const payload = data.subarray(off);
+          if (payload.length > 20 && payload[0] === 1) { seq = Buffer.from(payload); break; }
+        }
+        if (!seq) {
+          const found = findNalPayload(data, [5, 4]);
+          const sets = found ? pickParamSets(found.nals) : null;
+          if (sets) seq = buildHvcC(sets.vps, sets.sps, sets.pps);
+        }
+        if (!seq) return false;
+        hvcC = seq;
+        const next = buildEnhancedSeq(seq);
         packet.data = next;
         packet.size = next.length;
         packet.flags = 2;
@@ -270,9 +412,17 @@ function createFixer() {
 
       if (packetType !== 1) return false;
 
+      // 编码帧：偏移 5 是标准 legacy 头，4 是 GStreamer 少写 CTS 的情况，8 是误用 enhanced 头
+      const found = findNalPayload(data, [5, 4, 8]);
+      if (!found) return false;
+      if (!loggedFormat && (found.offset !== 5 || found.annexB)) {
+        loggedFormat = true;
+        console.log(`[hevc-fix] 检测到非标准 HEVC 封装：头偏移 ${found.offset}，${found.annexB ? 'Annex-B' : 'AVCC'}，已归一化为长度前缀`);
+      }
+
       // 关键帧里通常带内联 VPS/SPS/PPS：捞出来合成 hvcC
       if (!hvcC) {
-        const sets = pickParamSets(splitLengthPrefixedNals(data, 5));
+        const sets = pickParamSets(found.nals);
         if (sets) {
           hvcC = buildHvcC(sets.vps, sets.sps, sets.pps);
           dims = parseHevcSpsDimensions(sets.sps);
@@ -287,7 +437,7 @@ function createFixer() {
       const isKey = frameType === 1;
       if (isKey && emit) emit(hvcC);
 
-      const next = toEnhanced(data, 5, isKey, 1);
+      const next = buildEnhancedFrame(data, isKey, toLengthPrefixed(found.nals));
       packet.data = next;
       packet.size = next.length;
       packet.flags = isKey ? 3 : 4;
@@ -319,6 +469,10 @@ module.exports = {
   buildSequenceHeaderPacket,
   parseHevcSpsDimensions,
   splitLengthPrefixedNals,
+  splitAnnexBNals,
+  splitNals,
+  toLengthPrefixed,
   pickParamSets,
   isLegacyHevc,
+  isEnhancedHevc,
 };

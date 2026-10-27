@@ -32,7 +32,7 @@ function PlaySettingsPopover({ stream, onClose, onUpdate }) {
   };
 
   return (
-    <div className="play-settings-popover" onClick={e => e.stopPropagation()}>
+    <div className="play-settings-popover" role="dialog" aria-label="播放设置" onClick={e => e.stopPropagation()}>
       <div className="play-settings-row">
         <label>
           <input type="checkbox" checked={loop} onChange={e => setLoop(e.target.checked)} />
@@ -80,6 +80,7 @@ export default function LocalMediaPanel({
 }) {
   const [adding, setAdding] = useState(false);
   const [openSettings, setOpenSettings] = useState(null); // streamKey of open popover
+  const [err, setErr] = useState('');
 
   const handleAdd = async () => {
     const api = window.electronAPI;
@@ -107,27 +108,49 @@ export default function LocalMediaPanel({
 
     if (!paths || paths.length === 0) return;
     setAdding(true);
+    setErr('');
     try {
+      const failed = [];
       for (const item of paths) {
         const filePath = typeof item === 'string' ? item : item.filePath;
         const fileName = typeof item === 'string'
           ? item.split(/[/\\]/).pop()
           : item.fileName;
-        await fetch(`${API}/api/local/add`, {
+        const r = await fetch(`${API}/api/local/add`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filePath, fileName }),
         });
+        if (!r.ok) failed.push(fileName || filePath);
       }
+      if (failed.length) {
+        setErr(`有 ${failed.length} 个文件没加上：${failed.slice(0, 2).join('、')}${failed.length > 2 ? '…' : ''}`);
+      }
+    } catch (e) {
+      setErr('添加失败：' + (e?.message || '网络错误'));
     } finally {
       setAdding(false);
     }
   };
 
   const handleRemove = async (streamKey) => {
-    const keyPart = streamKey.replace(/^local\//, '');
-    await fetch(`${API}/api/local/${encodeURIComponent(keyPart)}`, { method: 'DELETE' });
-    onRemove?.(streamKey);
+    const stream = localStreams.find(s => s.streamKey === streamKey);
+    const name = stream?.fileName || streamKey;
+    if (!window.confirm(`从本地媒体列表移除「${name}」？\n不会删除磁盘上的原文件，可重新添加。`)) return;
+
+    setErr('');
+    try {
+      const keyPart = streamKey.replace(/^local\//, '');
+      const r = await fetch(`${API}/api/local/${encodeURIComponent(keyPart)}`, { method: 'DELETE' });
+      // 404 = 服务端已经没有这条了，按“已移除”处理，避免列表卡住删不掉
+      if (!r.ok && r.status !== 404) {
+        setErr(`移除「${name}」失败（HTTP ${r.status}）`);
+        return;
+      }
+      onRemove?.(streamKey);
+    } catch (e) {
+      setErr(`移除「${name}」失败：` + (e?.message || '网络错误'));
+    }
   };
 
   const toggleSettings = (e, streamKey) => {
@@ -143,6 +166,9 @@ export default function LocalMediaPanel({
           {adding ? '…' : '+ 添加'}
         </button>
       </div>
+      {err && (
+        <p className="local-error" style={{ color: '#fca5a5', fontSize: '0.75rem', margin: '0.2rem 0' }}>{err}</p>
+      )}
       {localStreams.length === 0 ? null : (
         <ul className="local-list">
           {localStreams.map((s, i) => {

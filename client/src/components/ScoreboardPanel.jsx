@@ -61,6 +61,7 @@ const INTRO_STYLES = [
 export function ScoreboardSection() {
   const [cfg, setCfg] = useState(DEFAULT);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [laneCount, setLaneCount] = useState(8);
 
   useEffect(() => {
@@ -77,17 +78,37 @@ export function ScoreboardSection() {
     return () => socket.disconnect();
   }, []);
 
+  // 保存失败后从服务端拉回真实状态，避免“界面上有照片、服务端没存上”
+  const resync = () => {
+    fetch(`${API}/api/scoreboard`).then(r => r.json()).then(d => {
+      setCfg(prev => ({ ...DEFAULT, ...d }));
+      if (Array.isArray(d?.athletes) && d.athletes.length) setLaneCount(d.athletes.length);
+    }).catch(() => {});
+  };
+
   const post = async (patch) => {
     setSaving(true);
+    setSaveError('');
     try {
       const r = await fetch(`${API}/api/scoreboard`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
       });
-      const d = await r.json();
+      const text = await r.text();
+      let d = {};
+      try { d = text ? JSON.parse(text) : {}; } catch { d = {}; }
+      if (!r.ok || d?.ok === false) {
+        setSaveError(d?.error || `保存失败（HTTP ${r.status}）`);
+        resync();
+        return null;
+      }
       setCfg(prev => ({ ...DEFAULT, ...d }));
       return d;
+    } catch (e) {
+      setSaveError('保存失败：' + (e?.message || '网络错误'));
+      resync();
+      return null;
     } finally {
       setSaving(false);
     }
@@ -135,6 +156,7 @@ export function ScoreboardSection() {
       await patchAthlete(idx, 'photo', dataUrl);
     } catch (e) {
       console.error('照片处理失败', e);
+      setSaveError('照片处理失败：' + (e?.message || e));
     }
   };
 
@@ -153,6 +175,10 @@ export function ScoreboardSection() {
         🏁 赛事信息条
         {saving && <span className="settings-saving"> ●</span>}
       </div>
+
+      {saveError && (
+        <p className="settings-muted" style={{ color: '#fca5a5' }}>{saveError}</p>
+      )}
 
       <div className="settings-row">
         <label className="settings-toggle">

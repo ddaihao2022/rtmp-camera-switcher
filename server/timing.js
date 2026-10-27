@@ -388,6 +388,16 @@ function register(opts = {}) {
     });
   }
 
+  // 项目名已带组别/性别时，不再重复拼类别前缀
+  const HAS_GROUP = /(男子|女子|男、女|男女|混合|小学|初中|高中|初一|初二|高一|高二|教职工|小四|小五|小六|焦)/;
+  function displayEventName(eventName, category) {
+    const n = String(eventName || '').trim();
+    const c = String(category || '').trim();
+    if (!n) return c;
+    if (!c || HAS_GROUP.test(n)) return n;
+    return c + n;
+  }
+
   /** 主控台换项目 / 换组次 → 自动换轮（旧数据入历史） */
   function syncEvent(cfg) {
     ensureState();
@@ -427,7 +437,7 @@ function register(opts = {}) {
       };
       state.updatedAt = Date.now();
       emit();
-      logger.info?.(`[计时] 当前项目 → ${state.event.category}${state.event.eventName} ${state.event.round} ${state.event.heat}`);
+      logger.info?.(`[计时] 当前项目 → ${displayEventName(state.event.eventName, state.event.category)} ${state.event.round} ${state.event.heat}`);
       return true;
     }
     return false;
@@ -485,11 +495,26 @@ function register(opts = {}) {
     const computed = computeLanes();
     const all = Object.values(computed);
     if (!all.length) return false;
-    // 严格判定：每一道都达到人数要求（比赛完整结束）才自动回传，
-    // 避免大屏在运动员还没跑完时就显示半截成绩。
-    const allReady = all.every((l) => laneIsAutoReady(l, min));
+
+    // 只要求“有名册的道次”达标：空道次不是没跑完，而是没人。
+    // 没有名册时退化为“已经有读数的道次”，避免 8 道只上 6 人时永远不触发。
+    let namedLanes = [];
+    try {
+      const cfg = typeof opts.getScoreboard === 'function' ? opts.getScoreboard() : null;
+      namedLanes = (cfg?.athletes || [])
+        .filter((a) => String(a?.name || '').trim() || a?.photo)
+        .map((a) => Number(a.lane))
+        .filter((n) => Number.isFinite(n) && n >= 1);
+    } catch {
+      namedLanes = [];
+    }
+    const targets = namedLanes.length
+      ? all.filter((l) => namedLanes.includes(l.lane))
+      : all.filter((l) => l.count > 0);
+    if (!targets.length) return false;
+    const allReady = targets.every((l) => laneIsAutoReady(l, min));
     if (!allReady) return false;
-    applyResults({ by: '自动合成（全部道次达标）' });
+    applyResults({ by: `自动合成（${targets.length} 道达标）` });
     return true;
   }
 
@@ -516,7 +541,16 @@ function register(opts = {}) {
   // 老师录入 / 覆盖 / 删除
   app.post('/api/timing/entry', (req, res) => {
     ensureState();
-    const { judge, lane, time, ms, src = 'manual', raw } = req.body || {};
+    const { judge, lane, time, ms, src = 'manual', raw, roundKey } = req.body || {};
+    // 离线补传必须绑定轮次：导播已经切到下一项时，旧成绩不能写进新项目
+    if (roundKey && state.roundKey && String(roundKey) !== String(state.roundKey)) {
+      return res.status(409).json({
+        ok: false,
+        code: 'ROUND_CHANGED',
+        error: '该轮已结束（当前已切到别的项目），这条成绩未写入，请交给汇总台处理',
+        roundKey: state.roundKey,
+      });
+    }
     const judgeId = String(judge || '').trim();
     const laneNo = Number(lane);
     const judgeObj = state.judges.find((j) => j.id === judgeId);
@@ -708,7 +742,7 @@ function register(opts = {}) {
     const csv = [header, ...rows]
       .map((r) => r.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
       .join('\r\n');
-    const eventName = `${state.event.category || ''}${state.event.eventName || ''}`.trim() || '成绩';
+    const eventName = displayEventName(state.event.eventName, state.event.category) || '成绩';
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
       'Content-Disposition',

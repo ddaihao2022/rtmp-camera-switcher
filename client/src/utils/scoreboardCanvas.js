@@ -10,9 +10,10 @@
  */
 import {
   fontOf, roundRect, panel, boxShadow, clearShadow,
-  chipWidth, drawChip, layoutChips,
+  chipWidth, drawChip, layoutChips, fitText,
 } from './canvasKit.js';
 import { drawIntro } from './introCanvas.js';
+import { eventDisplayName } from './eventName.js';
 
 /** 与 ScoreboardOverlay.jsx 的 formatMs 保持一致 */
 export function formatMs(ms) {
@@ -154,9 +155,7 @@ function drawTrackBug(ctx, config, w, h, s, now) {
   const chipFont = f(px(10, 1.1, 12), 700);
   const chipPadX = 8 * s;
 
-  const title = category && eventName && !eventName.startsWith(category)
-    ? `${category} ${eventName}`
-    : eventName;
+  const title = eventDisplayName(eventName, category);
 
   // head 左区元素（title 无底色，其余是胶囊）
   const headItems = [];
@@ -513,6 +512,243 @@ function drawTeamBar(ctx, config, w, h, s) {
   ctx.restore();
 }
 
+// ─── 全屏成绩公示 ─────────────────────────────────────────────────────────────
+// 与 FullResultsBoard.jsx / .full-results 的 CSS 对齐：同为深底 + 名次行，
+// 尺寸都以画面高的 1% 为单位（≈ CSS 的 cqh），16:9 下与页面版比例一致。
+
+const MEDAL_STYLE = {
+  1: { color: '#fbbf24', bg: 'rgba(251,191,36,0.20)' },
+  2: { color: '#e2e8f0', bg: 'rgba(203,213,225,0.16)' },
+  3: { color: '#f0a75a', bg: 'rgba(217,119,6,0.18)' },
+};
+
+function drawFullResults(ctx, config, w, h, s) {
+  const snap = config?.fullResultsSnapshot;
+  const athletes = (Array.isArray(snap?.athletes) ? snap.athletes : []).filter(Boolean);
+  if (!athletes.length) return;
+
+  const hs = h / 100;              // 1% 画面高
+  const padX = w * 0.042;
+  const padTop = h * 0.042;
+  const padBottom = h * 0.036;
+  const line = Math.max(1, s * 0.8);
+
+  // 底色 + 两团光晕（左上暖金 / 右下冷蓝）
+  ctx.fillStyle = '#080b12';
+  ctx.fillRect(0, 0, w, h);
+  let glow = ctx.createRadialGradient(w * 0.16, h * 0.04, 0, w * 0.16, h * 0.04, w * 0.95);
+  glow.addColorStop(0, 'rgba(245,158,11,0.20)');
+  glow.addColorStop(0.45, 'rgba(245,158,11,0.045)');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, w, h);
+  glow = ctx.createRadialGradient(w * 0.90, h, 0, w * 0.90, h, w * 0.9);
+  glow.addColorStop(0, 'rgba(59,130,246,0.20)');
+  glow.addColorStop(0.5, 'rgba(59,130,246,0.05)');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, w, h);
+
+  // 竖向细网格
+  ctx.strokeStyle = 'rgba(255,255,255,0.035)';
+  ctx.lineWidth = line;
+  for (let i = 1; i < 16; i += 1) {
+    const x = (w / 16) * i;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+  }
+
+  // 背景水印
+  ctx.font = f(20 * hs, 900);
+  ctx.fillStyle = 'rgba(255,255,255,0.032)';
+  ctx.textAlign = 'right';
+  ctx.fillText('RESULTS', w * 0.985, h * 0.72);
+  ctx.textAlign = 'left';
+
+  // ── 页眉 ──
+  const title = eventDisplayName(
+    snap.eventName || config?.eventName || '项目成绩',
+    snap.category || config?.category || '',
+  );
+  const meta = [snap.category, snap.round, snap.heat, snap.sessionLabel]
+    .filter(Boolean)
+    .map(String);
+
+  const kickerSize = 1.85 * hs;
+  const titleSize = 5.4 * hs;
+  const metaSize = 1.8 * hs;
+  const chipH = metaSize * 1.9;
+  const gap = 0.9 * hs;
+
+  const kickerCy = padTop + kickerSize * 0.62;
+  ctx.fillStyle = '#fbbf24';
+  ctx.beginPath();
+  ctx.arc(padX + 0.5 * hs, kickerCy, 0.5 * hs, 0, Math.PI * 2);
+  ctx.fill();
+
+  const prevSpacing = ctx.letterSpacing;
+  ctx.letterSpacing = `${(0.26 * kickerSize).toFixed(2)}px`;
+  ctx.font = f(kickerSize, 700);
+  ctx.fillStyle = '#fbbf24';
+  ctx.fillText('项目成绩 · RESULTS', padX + 1.7 * hs, kickerCy);
+  ctx.letterSpacing = prevSpacing || '0px';
+
+  const titleCy = kickerCy + kickerSize * 0.62 + gap + titleSize * 0.56;
+  ctx.font = f(titleSize, 800);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(fitText(ctx, title, w - padX * 2), padX, titleCy);
+
+  let headerBottom = titleCy + titleSize * 0.56 + 1.6 * hs;
+  if (meta.length) {
+    const metaTop = titleCy + titleSize * 0.56 + gap;
+    let mx = padX;
+    for (const label of meta) {
+      ctx.font = f(metaSize, 600);
+      const cw = ctx.measureText(label).width + 1.8 * hs;
+      panel(ctx, mx, metaTop, cw, chipH, chipH / 2,
+        'rgba(255,255,255,0.07)', 'rgba(255,255,255,0.12)', line);
+      ctx.font = f(metaSize, 600);
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillText(label, mx + 0.9 * hs, metaTop + chipH / 2);
+      mx += cw + 1.05 * hs;
+    }
+    headerBottom = metaTop + chipH + 1.6 * hs;
+  }
+
+  // 分隔线
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+  ctx.lineWidth = line;
+  ctx.beginPath();
+  ctx.moveTo(padX, headerBottom);
+  ctx.lineTo(w - padX, headerBottom);
+  ctx.stroke();
+
+  // ── 页脚基线先算出来，列表高度取中间剩余 ──
+  const footSize = 1.75 * hs;
+  const footCy = h - padBottom - footSize * 0.5;
+  const listTop = headerBottom + 1.9 * hs;
+  const listBottom = footCy - footSize * 1.4 - 1.9 * hs;
+
+  // ── 成绩列表 ──
+  const n = athletes.length;
+  const cols = n > 16 ? 3 : n > 8 ? 2 : 1;
+  const rows = Math.ceil(n / cols);
+  const few = rows <= 5;
+  const dense = rows > 8;
+
+  const nameSize = (few ? 4.4 : dense ? 2.35 : 3.0) * hs;
+  const rankSize = (few ? 5.0 : dense ? 2.5 : 3.1) * hs;
+  const timeSize = (few ? 4.6 : dense ? 2.45 : 3.05) * hs;
+  const unitSize = (few ? 2.4 : dense ? 1.5 : 1.85) * hs;
+  const bibSize = (few ? 2.2 : dense ? 1.4 : 1.7) * hs;
+  const laneSize = (few ? 2.6 : dense ? 1.55 : 1.9) * hs;
+  const laneBox = (few ? 5.0 : dense ? 2.9 : 3.6) * hs;
+
+  const gapX = w * 0.02;
+  const gapY = 1.15 * hs;
+  const rowH = Math.max(1, (listBottom - listTop - gapY * (rows - 1)) / rows);
+  const colW = (w - padX * 2 - gapX * (cols - 1)) / cols;
+
+  athletes.forEach((a, i) => {
+    const col = Math.floor(i / rows);
+    const row = i % rows;
+    const x = padX + col * (colW + gapX);
+    const y = listTop + row * (rowH + gapY);
+    const radius = Math.min(1 * hs, rowH / 4);
+    const rank = String(a.place || '').match(/\d+/)?.[0] || '';
+    const medal = MEDAL_STYLE[rank];
+    const cy = y + rowH / 2;
+
+    panel(ctx, x, y, colW, rowH, radius,
+      medal ? medal.bg : 'rgba(255,255,255,0.06)', 'rgba(255,255,255,0.09)', line);
+
+    // 左缘奖牌色条
+    if (medal) {
+      ctx.save();
+      roundRect(ctx, x, y, colW, rowH, radius);
+      ctx.clip();
+      ctx.fillStyle = medal.color;
+      ctx.fillRect(x, y, 0.5 * hs, rowH);
+      ctx.restore();
+    }
+
+    // 名次
+    const rankW = rankSize * 2.4;
+    ctx.textAlign = 'center';
+    ctx.font = f(rankSize, 800);
+    ctx.fillStyle = medal ? medal.color : '#cbd5e1';
+    ctx.fillText(rank || '—', x + 1.1 * hs + rankW / 2, cy);
+
+    // 道次块
+    let cx = x + 1.1 * hs + rankW + 0.6 * hs;
+    panel(ctx, cx, cy - laneBox / 2, laneBox, laneBox, 0.7 * hs,
+      'rgba(245,158,11,0.16)', 'rgba(245,158,11,0.42)', line);
+    ctx.textAlign = 'center';
+    ctx.font = f(laneSize, 800);
+    ctx.fillStyle = '#fde68a';
+    ctx.fillText(String(a.lane ?? '—'), cx + laneBox / 2, cy);
+    cx += laneBox + 1.1 * hs;
+
+    // 成绩（右对齐）
+    const insetR = 1.2 * hs;
+    const timeRight = x + colW - insetR;
+    const resTxt = String(a.result || '—');
+    ctx.textAlign = 'right';
+    ctx.font = f(timeSize, 800);
+    ctx.fillStyle = medal ? medal.color : '#fde68a';
+    ctx.fillText(resTxt, timeRight, cy);
+    const timeSlot = Math.max(w * 0.055, ctx.measureText(resTxt).width);
+    let textRight = timeRight - timeSlot - 1.1 * hs;
+
+    // 号码布
+    if (a.bib && !dense) {
+      const bibTxt = `No.${a.bib}`;
+      ctx.font = f(bibSize, 500);
+      const bw = ctx.measureText(bibTxt).width;
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(bibTxt, textRight, cy);
+      textRight -= bw + 1.0 * hs;
+    }
+
+    // 姓名 + 单位
+    const name = String(a.name || '').trim() || String(a.unit || '').trim() || '—';
+    const unit = String(a.name || '').trim() ? String(a.unit || '').trim() : '';
+    const nameMax = Math.max(0, textRight - cx);
+    ctx.textAlign = 'left';
+    if (unit) {
+      ctx.font = f(unitSize, 500);
+    }
+    const unitW = unit ? ctx.measureText(unit).width + 1.0 * hs : 0;
+    ctx.font = f(nameSize, 700);
+    const shown = fitText(ctx, name, Math.max(0, nameMax - unitW));
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(shown, cx, cy);
+    if (unit && shown === name) {
+      const nameW = ctx.measureText(shown).width;
+      ctx.font = f(unitSize, 500);
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(fitText(ctx, unit, Math.max(0, nameMax - nameW - 1.0 * hs)),
+        cx + nameW + 1.0 * hs, cy);
+    }
+  });
+
+  // ── 页脚 ──
+  ctx.font = f(footSize, 500);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#94a3b8';
+  const countTxt = `${snap.resultCount || n} 人已出成绩`;
+  ctx.fillText(countTxt, padX, footCy);
+  if (snap.time) {
+    const cw = ctx.measureText(countTxt).width;
+    ctx.fillText(String(snap.time), padX + cw + 3 * hs, footCy);
+  }
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#64748b';
+  ctx.fillText('最终成绩以裁判长公布为准', w - padX, footCy);
+}
+
 /**
  * 把当前叠加层配置画到录制画布上（成片与 PGM 监看一致）
  * @param {CanvasRenderingContext2D} ctx
@@ -522,12 +758,19 @@ function drawTeamBar(ctx, config, w, h, s) {
  * @param {number} [now] 仅供测试注入时间
  */
 export function drawScoreboard(ctx, config, w, h, now = Date.now()) {
-  if (!ctx || !config?.enabled || !w || !h) return;
+  if (!ctx || !w || !h) return;
 
   ctx.save();
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
   try {
+    // 全屏成绩是一次性盖板：即使信息条总开关关着，也要烧进成片
+    if (config?.fullResultsVisible && config?.fullResultsSnapshot) {
+      drawFullResults(ctx, config, w, h, Math.max(0.35, w / 1280));
+      return;
+    }
+    if (!config?.enabled) return;
+
     const mode = config.mode || 'track';
     if (mode === 'intro') {
       if (config.introVisible === false) return; // 已隐藏，不上屏

@@ -217,6 +217,19 @@ function createControlWindow() {
     }
   });
   loadView(controlWin, null);
+  controlWin.on('close', (e) => {
+    if (recordingFiles.size === 0) return;
+    const choice = dialog.showMessageBoxSync(controlWin, {
+      type: 'warning',
+      buttons: ['继续录制', '停止并退出'],
+      defaultId: 0,
+      cancelId: 0,
+      title: '正在录制',
+      message: '正在录制中，确定要退出吗？',
+      detail: '退出会停止录制。已经写入磁盘的内容会保留，但当前分段可能缺少最后约 1 秒。',
+    });
+    if (choice === 0) e.preventDefault();
+  });
   controlWin.on('closed', () => {
     controlWin = null;
     closeAllOutputWindows();
@@ -538,6 +551,247 @@ ipcMain.handle('record:saveBatch', async (_e, { files = [] } = {}) => {
   return { success: true, filePaths: written };
 });
 
+// ─── 录制：边录边写 + 按时间分段 ─────────────────────────────────────────────
+// 渲染进程每收到一个 MediaRecorder 分片就 append 一次，主进程用文件流直接写盘；
+// 不再等停止后把整段录制塞进一个 ArrayBuffer 再 writeFileSync。
+const RECORDING_SETTINGS_FILE = path.join(app.getPath('userData'), 'recording-settings.json');
+const recordingFiles = new Map(); // token -> { stream, filePath, error }
+let recordingTokenSeq = 0;
+
+function loadRecordingSettings() {
+  try {
+    const d = JSON.parse(fs.readFileSync(RECORDING_SETTINGS_FILE, 'utf8'));
+    return {
+      dir: typeof d?.dir === 'string' ? d.dir : '',
+      segmentMinutes: Number.isFinite(Number(d?.segmentMinutes)) ? Number(d.segmentMinutes) : 10,
+    };
+  } catch {
+    return { dir: '', segmentMinutes: 10 };
+  }
+}
+
+function saveRecordingSettings(patch = {}) {
+  const prev = loadRecordingSettings();
+  const next = { ...prev };
+  if (typeof patch.dir === 'string') next.dir = patch.dir;
+  if (patch.segmentMinutes !== undefined && Number.isFinite(Number(patch.segmentMinutes))) {
+    next.segmentMinutes = Math.max(0, Math.min(180, Number(patch.segmentMinutes)));
+  }
+  try {
+    fs.mkdirSync(path.dirname(RECORDING_SETTINGS_FILE), { recursive: true });
+    fs.writeFileSync(RECORDING_SETTINGS_FILE, JSON.stringify(next, null, 2), 'utf8');
+  } catch (e) {
+    writeLogLine('[record] 保存录制设置失败: ' + e.message);
+  }
+  return next;
+}
+
+function safeRecordingName(s, fallback = 'video') {
+  const v = String(s ?? '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim();
+  return (v || fallback).slice(0, 48);
+}
+
+function uniqueRecordingPath(dir, name) {
+  const ext = path.extname(name);
+  const stem = ext ? name.slice(0, -ext.length) : name;
+  let target = path.join(dir, name);
+  for (let i = 2; fs.existsSync(target) && i < 1000; i += 1) {
+    target = path.join(dir, `${stem}-${i}${ext}`);
+  }
+  return target;
+}
+
+function waitForDrain(stream) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => cleanup(() => reject(new Error('磁盘写入超时，移动磁盘可能已无响应'))), 30000);
+    const cleanup = (fn) => {
+      clearTimeout(timer);
+      stream.off('drain', onDrain);
+      stream.off('error', onError);
+      stream.off('close', onClose);
+      fn();
+    };
+    const onDrain = () => cleanup(resolve);
+    const onError = (err) => cleanup(() => reject(err));
+    const onClose = () => cleanup(() => reject(new Error('录制文件已关闭')));
+    stream.once('drain', onDrain);
+    stream.once('error', onError);
+    stream.once('close', onClose);
+  });
+}
+
+function notifyRecordingError(token, err) {
+  if (controlWin && !controlWin.isDestroyed()) {
+    controlWin.webContents.send('recording:error', { token, message: err?.message || String(err) });
+  }
+}
+
+ipcMain.handle('recording:getSettings', () => loadRecordingSettings());
+
+ipcMain.handle('recording:setSettings', (_e, patch = {}) => saveRecordingSettings(patch));
+
+ipcMain.handle('recording:pickDir', async () => {
+  const settings = loadRecordingSettings();
+  const result = await dialog.showOpenDialog(controlWin, {
+    title: '选择录制保存目录（建议选移动磁盘）',
+    defaultPath: settings.dir || app.getPath('videos'),
+    buttonLabel: '保存到这里',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (result.canceled || !result.filePaths?.length) return { success: false };
+  const dir = result.filePaths[0];
+  saveRecordingSettings({ dir });
+  return { success: true, dir };
+});
+
+ipcMain.handle('recording:diskInfo', async (_e, dir) => {
+  const target = dir || loadRecordingSettings().dir;
+  if (!target) return { success: false, error: '未选择保存目录' };
+  try {
+    const st = await fs.promises.statfs(target);
+    return {
+      success: true,
+      dir: target,
+      free: st.bavail * st.bsize,
+      total: st.blocks * st.bsize,
+    };
+  } catch (e) {
+    return { success: false, error: e.message, code: e.code };
+  }
+});
+
+ipcMain.handle('recording:begin', async (_e, payload = {}) => {
+  const settings = loadRecordingSettings();
+  const dir = payload.dir || settings.dir;
+  const base = safeRecordingName(payload.base, `recording-${Date.now()}`);
+  const files = Array.isArray(payload.files) ? payload.files : [];
+
+  if (!dir) return { success: false, error: '未选择保存目录', code: 'NODIR' };
+  if (!files.length) return { success: false, error: '没有要保存的文件' };
+
+  try {
+    const st = await fs.promises.stat(dir);
+    if (!st.isDirectory()) throw new Error('保存路径不是目录');
+    await fs.promises.access(dir, fs.constants.W_OK);
+  } catch (e) {
+    return { success: false, error: `保存目录不可用：${e.message}`, code: e.code || 'EDIR' };
+  }
+
+  const created = [];
+  try {
+    for (const f of files) {
+      const ext = safeRecordingName(f.ext || 'webm').replace(/^\./, '') || 'webm';
+      const segment = Math.max(0, Math.floor(Number(f.segment) || 0));
+      const name = `${base}_${safeRecordingName(f.suffix)}_${String(segment).padStart(3, '0')}.${ext}`;
+      const filePath = uniqueRecordingPath(dir, name);
+
+      const stream = fs.createWriteStream(filePath, { flags: 'wx', autoClose: false });
+      await new Promise((resolve, reject) => {
+        stream.once('open', resolve);
+        stream.once('error', reject);
+      });
+
+      const token = `rec-${++recordingTokenSeq}`;
+      const rec = { token, filePath, stream, error: null };
+      stream.on('error', (err) => {
+        rec.error = err;
+        notifyRecordingError(token, err);
+      });
+      recordingFiles.set(token, rec);
+      created.push({ token, filePath, suffix: f.suffix, segment });
+    }
+  } catch (e) {
+    // 任一文件建失败：把已经建出来的空文件清掉，别在磁盘上留垃圾
+    for (const c of created) {
+      const rec = recordingFiles.get(c.token);
+      recordingFiles.delete(c.token);
+      try { rec?.stream?.destroy(); } catch {}
+      if (typeof rec?.stream?.fd === 'number') {
+        try { fs.closeSync(rec.stream.fd); } catch {}
+      }
+      try { fs.unlinkSync(c.filePath); } catch {}
+    }
+    return { success: false, error: '创建录制文件失败：' + e.message, code: e.code || 'ECREATE' };
+  }
+
+  return { success: true, dir, files: created };
+});
+
+ipcMain.handle('recording:append', async (_e, { token, buffer } = {}) => {
+  const rec = recordingFiles.get(token);
+  if (!rec) throw new Error('录制会话已结束');
+  if (rec.error) throw rec.error;
+
+  const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+  if (!buf.length) return { success: true, bytes: 0 };
+
+  const ok = rec.stream.write(buf);
+  if (!ok) await waitForDrain(rec.stream);
+  return { success: true, bytes: buf.length };
+});
+
+ipcMain.handle('recording:end', async (_e, { token } = {}) => {
+  const rec = recordingFiles.get(token);
+  if (!rec) return { success: false, error: '录制会话不存在' };
+  recordingFiles.delete(token);
+
+  const closeFd = () => {
+    if (typeof rec.stream?.fd === 'number') {
+      try { fs.closeSync(rec.stream.fd); } catch {}
+    }
+  };
+
+  if (rec.error) {
+    try { rec.stream.destroy(); } catch {}
+    closeFd();
+    return { success: false, filePath: rec.filePath, error: rec.error.message };
+  }
+
+  try {
+    await new Promise((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => done(reject, new Error('收尾超时：磁盘可能已拔出或无响应')), 20000);
+      const done = (fn, arg) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        rec.stream.off('error', onError);
+        fn(arg);
+      };
+      const onError = (err) => done(reject, err);
+      rec.stream.once('error', onError);
+      if (rec.stream.destroyed || rec.stream.closed) {
+        done(reject, new Error('录制文件已意外关闭'));
+        return;
+      }
+      rec.stream.end((err) => done(err ? reject : resolve, err));
+    });
+    // 移动磁盘：停止时强制刷盘，拔盘前数据已经在介质上
+    if (typeof rec.stream.fd === 'number') {
+      try { fs.fsyncSync(rec.stream.fd); } catch {}
+    }
+    closeFd();
+    return { success: true, filePath: rec.filePath };
+  } catch (e) {
+    try { rec.stream.destroy(); } catch {}
+    closeFd();
+    return { success: false, filePath: rec.filePath, error: e.message };
+  }
+});
+
+ipcMain.handle('recording:openDir', async (_e, dir) => {
+  const target = dir || loadRecordingSettings().dir;
+  if (!target) return { success: false, error: '未选择保存目录' };
+  const err = await shell.openPath(target);
+  return { success: !err, error: err || undefined };
+});
+
+ipcMain.handle('recording:reveal', async (_e, filePath) => {
+  if (!filePath) return { success: false };
+  shell.showItemInFolder(filePath);
+  return { success: true };
+});
+
 // 本地媒体文件选择（音视频 + 图片）
 ipcMain.handle('dialog:openFile', async () => {
   const result = await dialog.showOpenDialog(controlWin, {
@@ -579,6 +833,34 @@ app.whenReady().then(() => {
     }
     notifyOutputsChanged();
   });
+});
+
+// 退出前把还在写的录制文件收尾，避免留下未关闭的文件句柄
+let quittingAfterRecordings = false;
+app.on('before-quit', (e) => {
+  if (quittingAfterRecordings || recordingFiles.size === 0) return;
+  e.preventDefault();
+  quittingAfterRecordings = true;
+  (async () => {
+    for (const rec of [...recordingFiles.values()]) {
+      try {
+        await new Promise((resolve) => {
+          let done = false;
+          const finish = () => { if (!done) { done = true; resolve(); } };
+          try { rec.stream.end(finish); } catch { finish(); }
+          setTimeout(finish, 3000);
+        });
+        if (typeof rec.stream?.fd === 'number') {
+          try { fs.fsyncSync(rec.stream.fd); } catch {}
+          try { fs.closeSync(rec.stream.fd); } catch {}
+        }
+      } catch (err) {
+        writeLogLine('[record] 退出时收尾失败: ' + err.message);
+      }
+    }
+    recordingFiles.clear();
+    app.quit();
+  })();
 });
 
 app.on('window-all-closed', () => {
