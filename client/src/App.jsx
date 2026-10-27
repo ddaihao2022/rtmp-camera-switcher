@@ -83,7 +83,11 @@ function App() {
       setSelectedStream(prev => {
         if (!prev) return prev;
         const fresh = updatedStreams.find(s => s.streamKey === prev.streamKey);
-        return fresh || null;
+        if (fresh) return fresh;
+        // 该路已下线：本地媒体被移除就直接清空；
+        // RTMP 设备则保留选中状态——播放器会自己重连，恢复后无需人工再点一次
+        if (prev.type === 'local') return null;
+        return prev;
       });
       console.log('流更新:', updatedStreams);
     });
@@ -246,7 +250,7 @@ function App() {
 
         <main className="video-area">
           {viewMode === 'grid' && streams.length > 0 ? (
-            <div className={`video-grid grid-${Math.min(streams.length, 4)}`}>
+            <div className={`video-grid grid-${Math.min(streams.length, 8)}`}>
               {streams.map((stream) => (
                 <div key={stream.streamKey} className="grid-item">
                   <VideoPlayer stream={stream} compact={true} onVideoReady={handleVideoReady} onVideoUnmount={handleVideoUnmount} />

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
-import flvjs from 'flv.js';
 import { SOCKET_URL, apiUrl, flvUrl, localStreamUrl } from './config.js';
+import { useLivePlayer } from './useLivePlayer.js';
 import './OutputView.css';
 
 const POSITION_STYLE = {
@@ -51,10 +51,8 @@ function Watermark({ config }) {
 
 function OutputView() {
   const videoRef = useRef(null);
-  const playerRef = useRef(null);
   const [streamKey, setStreamKey] = useState(null);
   const [streams, setStreams] = useState([]);
-  const [error, setError] = useState(null);
   const [watermark, setWatermark] = useState(null);
 
   // ?audio=1 时输出窗口带声音；默认只有画面，避免与主窗口音频叠音。
@@ -95,82 +93,25 @@ function OutputView() {
     fetch(apiUrl('/api/watermark')).then(r => r.json()).then(setWatermark).catch(() => {});
   }, []);
 
-  const isLive = streamKey && streams.some(s => s.streamKey === streamKey);
   const localItem = streams.find(s => s.streamKey === streamKey && s.type === 'local');
-
-  const localUrl = localItem ? localStreamUrl(localItem) : null;
-
-  // 只把「这一路实际的 FLV 地址」作为依赖：
-  // 之前依赖整个 streams 数组，任何一路上下线都会重建播放器，导致 HDMI 画面闪一下。
   const liveStream = streams.find(s => s.streamKey === streamKey && s.type !== 'local');
-  const liveFlvPath = streamKey ? (liveStream?.flvPath || `/${streamKey}.flv`) : null;
+  // 只依赖这一路自己的 FLV 路径：否则任何一路流上下线都会重建播放器，HDMI 画面会闪
+  const liveFlvPath = streamKey && !localItem
+    ? (liveStream?.flvPath || `/${streamKey}.flv`)
+    : null;
+  const localUrl = localItem ? localStreamUrl(localItem) : null;
+  const isLive = !!streamKey && streams.some(s => s.streamKey === streamKey);
 
-  // 选中流变化时,重建播放器
-  useEffect(() => {
-    const safeDestroy = () => {
-      if (playerRef.current) {
-        try {
-          playerRef.current.unload();
-          playerRef.current.detachMediaElement();
-          playerRef.current.destroy();
-        } catch (_) {}
-        playerRef.current = null;
-      }
-    };
+  // 断流/重启自动重连，HDMI 画面不需要人工干预
+  const { state, retryNow } = useLivePlayer({
+    videoRef,
+    url: liveFlvPath ? flvUrl(liveFlvPath) : null,
+    hasAudio: withAudio,
+    enabled: !!liveFlvPath,
+  });
 
-    safeDestroy();
-    setError(null);
-    if (!streamKey || !liveFlvPath || !videoRef.current || !flvjs.isSupported()) return;
-
-    const url = flvUrl(liveFlvPath);
-
-    const player = flvjs.createPlayer(
-      { type: 'flv', url, isLive: true, hasAudio: withAudio, hasVideo: true },
-      {
-        enableWorker: false,
-        enableStashBuffer: false,
-        stashInitialSize: 32,  // 降低初始缓冲
-        autoCleanupSourceBuffer: true,
-        autoCleanupMaxBackwardDuration: 2,  // 更激进地清理历史缓冲
-        autoCleanupMinBackwardDuration: 1,
-        // flv.js 1.6+ 内置追播:超过 maxLatency 自动加速到 minRemain
-        liveBufferLatencyChasing: true,
-        liveBufferLatencyMaxLatency: 0.5,  // 降低最大延迟阈值
-        liveBufferLatencyMinRemain: 0.1,   // 降低目标剩余缓冲
-        lazyLoad: false,
-        seekType: 'range'
-      }
-    );
-    player.on(flvjs.Events.ERROR, (t, d) => setError(`${t}: ${d}`));
-    player.attachMediaElement(videoRef.current);
-    player.load();
-    const v = videoRef.current;
-    const tryPlay = () => v?.play?.().catch(() => {});
-    v.addEventListener('loadeddata', tryPlay, { once: true });
-
-    // 兜底追播:更频繁地检查并采用更激进的策略
-    const catchUpTimer = setInterval(() => {
-      if (!v || v.paused || !v.buffered.length) return;
-      const liveEdge = v.buffered.end(v.buffered.length - 1);
-      const lag = liveEdge - v.currentTime;
-      // 更激进的追播策略
-      if (lag > 0.8) {
-        v.currentTime = liveEdge - 0.1;  // 直接跳到接近实时位置
-      } else if (lag > 0.5) {
-        v.playbackRate = 1.2;  // 轻微加速
-      } else {
-        v.playbackRate = 1.0;  // 恢复正常
-      }
-    }, 500);  // 更高频率检查
-
-    playerRef.current = player;
-
-    return () => {
-      clearInterval(catchUpTimer);
-      v?.removeEventListener('loadeddata', tryPlay);
-      safeDestroy();
-    };
-  }, [streamKey, liveFlvPath, withAudio]);
+  const retrying = state.phase === 'retrying';
+  const failed = state.phase === 'failed';
 
   return (
     <div className="output-root">
@@ -198,10 +139,21 @@ function OutputView() {
             <video ref={videoRef} className="output-video" autoPlay muted={!withAudio} playsInline />
           )}
           <Watermark config={watermark} />
-          {!isLive && !localItem && (
+          {retrying && (
+            <div className="output-msg">
+              <p>画面中断，正在第 {state.attempt} 次重连…</p>
+              <p className="hint">{Math.ceil(state.delay / 1000)} 秒后重试</p>
+            </div>
+          )}
+          {failed && (
+            <div className="output-msg error">
+              <p>{state.message || '连接已断开'}</p>
+              <button className="reconnect-btn" onClick={retryNow} style={{ marginTop: 12 }}>↻ 重新连接</button>
+            </div>
+          )}
+          {!retrying && !failed && !isLive && !localItem && (
             <div className="output-msg"><p>等待 {streamKey} 上线...</p></div>
           )}
-          {error && <div className="output-msg error"><p>{error}</p></div>}
         </>
       ) : (
         <div className="output-msg">

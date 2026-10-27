@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import flvjs from 'flv.js';
 import { flvUrl } from '../config.js';
+import { useLivePlayer } from '../useLivePlayer.js';
 
 /**
  * 主控窗口里的「PROGRAM 监视」浮窗
- * 实时回放当前选为输出的流,和 OutputView 走同一份低延迟配置
+ * 实时回放当前选为输出的流,和 OutputView 走同一套低延迟配置与自动重连
  *
  * Props:
  * - streamKey: 当前选为输出的流 key (null 时不渲染)
@@ -12,10 +12,8 @@ import { flvUrl } from '../config.js';
  */
 function OutputMonitor({ streamKey, streams }) {
   const videoRef = useRef(null);
-  const playerRef = useRef(null);
   const [collapsed, setCollapsed] = useState(false);
   const [hidden, setHidden] = useState(false);
-  const [error, setError] = useState(null);
 
   // 用户主动关掉之后,如果输出流换成另一路,自动重开
   useEffect(() => {
@@ -26,69 +24,18 @@ function OutputMonitor({ streamKey, streams }) {
   const liveStream = streams.find(s => s.streamKey === streamKey && s.type !== 'local');
   const liveFlvPath = streamKey ? (liveStream?.flvPath || `/${streamKey}.flv`) : null;
 
-  useEffect(() => {
-    const safeDestroy = () => {
-      if (playerRef.current) {
-        try {
-          playerRef.current.unload();
-          playerRef.current.detachMediaElement();
-          playerRef.current.destroy();
-        } catch (_) {}
-        playerRef.current = null;
-      }
-    };
-
-    safeDestroy();
-    setError(null);
-
-    if (!streamKey || !liveFlvPath || hidden || collapsed) return;
-    if (!videoRef.current || !flvjs.isSupported()) return;
-
-    const url = flvUrl(liveFlvPath);
-
-    const player = flvjs.createPlayer(
-      { type: 'flv', url, isLive: true, hasAudio: false, hasVideo: true },
-      {
-        enableWorker: false,
-        enableStashBuffer: false,
-        stashInitialSize: 128,
-        autoCleanupSourceBuffer: true,
-        autoCleanupMaxBackwardDuration: 3,
-        autoCleanupMinBackwardDuration: 2,
-        liveBufferLatencyChasing: true,
-        liveBufferLatencyMaxLatency: 1.0,
-        liveBufferLatencyMinRemain: 0.3
-      }
-    );
-    player.on(flvjs.Events.ERROR, (t, d) => setError(`${t}: ${d}`));
-    player.attachMediaElement(videoRef.current);
-    player.load();
-
-    const v = videoRef.current;
-    const tryPlay = () => v?.play?.().catch(() => {});
-    v.addEventListener('loadeddata', tryPlay, { once: true });
-
-    // 兜底追播,防止局部抖动后越积越长
-    const catchUpTimer = setInterval(() => {
-      if (!v || v.paused || !v.buffered.length) return;
-      const liveEdge = v.buffered.end(v.buffered.length - 1);
-      if (liveEdge - v.currentTime > 1.5) {
-        v.currentTime = liveEdge - 0.2;
-      }
-    }, 1000);
-
-    playerRef.current = player;
-
-    return () => {
-      clearInterval(catchUpTimer);
-      v?.removeEventListener('loadeddata', tryPlay);
-      safeDestroy();
-    };
-  }, [streamKey, liveFlvPath, hidden, collapsed]);
+  const { state, retryNow } = useLivePlayer({
+    videoRef,
+    url: liveFlvPath ? flvUrl(liveFlvPath) : null,
+    hasAudio: false,
+    enabled: !!liveFlvPath && !hidden && !collapsed,
+  });
 
   if (!streamKey || hidden) return null;
 
   const isLive = streams.some(s => s.streamKey === streamKey);
+  const retrying = state.phase === 'retrying';
+  const failed = state.phase === 'failed';
 
   return (
     <div className={`output-monitor ${collapsed ? 'collapsed' : ''}`}>
@@ -96,6 +43,7 @@ function OutputMonitor({ streamKey, streams }) {
         <span className="output-monitor-label">
           <span className="rec-dot" />
           PROGRAM · {streamKey}
+          {retrying && <span className="reconnecting-inline"> · 重连中 {state.attempt}</span>}
         </span>
         <div className="output-monitor-actions">
           <button
@@ -123,11 +71,17 @@ function OutputMonitor({ streamKey, streams }) {
             muted
             playsInline
           />
-          {!isLive && (
-            <div className="output-monitor-msg">等待 {streamKey} 上线…</div>
+          {retrying && (
+            <div className="output-monitor-msg">画面中断，{Math.ceil(state.delay / 1000)}s 后第 {state.attempt} 次重连…</div>
           )}
-          {error && (
-            <div className="output-monitor-msg error">{error}</div>
+          {failed && (
+            <div className="output-monitor-msg error">
+              {state.message || '连接已断开'}
+              <button className="reconnect-btn" onClick={retryNow} style={{ marginLeft: 8 }}>↻ 重连</button>
+            </div>
+          )}
+          {!retrying && !failed && !isLive && (
+            <div className="output-monitor-msg">等待 {streamKey} 上线…</div>
           )}
         </div>
       )}

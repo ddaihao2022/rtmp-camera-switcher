@@ -1890,3 +1890,54 @@
   accent-color: #f59e0b;
   cursor: pointer;
 }
+
+/* ===== 自动重连状态 ===== */
+.reconnecting-badge {
+  background: rgba(245, 158, 11, 0.92);
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3),
+              0 0 0 0.5px rgba(255, 255, 255, 0.15) inset;
+}
+
+.reconnecting-inline {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.reconnect-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(245, 158, 11, 0.92);
+  padding: 1.5rem 2rem;
+  border-radius: 8px;
+  color: #1a1200;
+  text-align: center;
+  font-size: 0.9375rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+.reconnect-overlay .reconnect-btn {
+  color: #1a1200;
+  border-color: rgba(0, 0, 0, 0.25);
+  background: rgba(255, 255, 255, 0.35);
+  font-weight: 600;
+}
+
+.reconnect-overlay .reconnect-btn:hover {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: rgba(0, 0, 0, 0.35);
+}
+
+/* ===== 网格视图 5–8 路 ===== */
+.grid-5,
+.grid-6 {
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: minmax(220px, 1fr);
+}
+
+.grid-7,
+.grid-8 {
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: minmax(180px, 1fr);
+}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import flvjs from 'flv.js';
 import { apiUrl, flvUrl, localStreamUrl } from '../config.js';
+import { useLivePlayer } from '../useLivePlayer.js';
 
 const RATE_CYCLE = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
@@ -165,24 +165,96 @@ function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount, onEnded })
 // ─── RTMP / FLV 直播播放器 ────────────────────────────────────────────────────
 function LivePlayer({ stream, compact, onVideoReady, onVideoUnmount }) {
   const videoRef = useRef(null);
-  const playerRef = useRef(null);
   const wrapperRef = useRef(null);
-  const [error, setError] = useState(null);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
   const [stats, setStats] = useState({ latency: 0, bufferLength: 0, fps: 0, bitrate: 0 });
+
+  const url = flvUrl(stream.flvPath || `/${stream.streamKey}.flv`);
+  const { state, playerRef, retryNow } = useLivePlayer({ videoRef, url, hasAudio: true });
 
   useEffect(() => {
     setHasInteracted(false);
-    setError(null);
-  }, [stream?.streamKey]);
+  }, [stream.streamKey]);
+
+  // 把媒体元素交给主窗口音频图（混音台 / 录制都依赖它）
+  useEffect(() => {
+    const el = videoRef.current;
+    if (el) onVideoReady?.(stream.streamKey, el);
+    return () => onVideoUnmount?.(stream.streamKey);
+  }, [stream.streamKey, onVideoReady, onVideoUnmount]);
 
   useEffect(() => {
     const handleFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener('fullscreenchange', handleFsChange);
     return () => document.removeEventListener('fullscreenchange', handleFsChange);
   }, []);
+
+  // 实时统计（延迟 / 缓冲 / 帧率 / 码率）
+  // 几个坑：
+  //  - flv.js 的 statisticsInfo 只有 speed(KB/s) 和 decodedFrames，没有 videoDataRate/audioDataRate
+  //  - 而 video.getVideoPlaybackQuality().totalVideoFrames 在 Electron 31 的 MSE 播放链路上是死值，
+  //    所以帧率改用 requestVideoFrameCallback 数「真正呈现的帧」
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    let presentedFrames = 0;
+    let lastPresentedFrames = 0;
+    let lastDecodedFrames = 0;
+    let lastAt = Date.now();
+    let frameHandle = null;
+
+    const useRvfc = typeof videoEl?.requestVideoFrameCallback === 'function';
+    const onFrame = () => {
+      presentedFrames += 1;
+      frameHandle = videoEl.requestVideoFrameCallback(onFrame);
+    };
+    if (useRvfc) frameHandle = videoEl.requestVideoFrameCallback(onFrame);
+
+    const timer = setInterval(() => {
+      const v = videoRef.current;
+      const p = playerRef.current;
+      if (!v || !p) return;
+      const info = p.statisticsInfo;
+
+      const now = Date.now();
+      const dt = (now - lastAt) / 1000;
+      if (dt <= 0) return;
+
+      let fps = 0;
+      if (useRvfc) {
+        fps = Math.max(0, Math.round((presentedFrames - lastPresentedFrames) / dt));
+        lastPresentedFrames = presentedFrames;
+      } else if (info && typeof info.decodedFrames === 'number') {
+        fps = Math.max(0, Math.round((info.decodedFrames - lastDecodedFrames) / dt));
+        lastDecodedFrames = info.decodedFrames;
+      }
+      lastAt = now;
+
+      const hasBuffer = v.buffered && v.buffered.length > 0;
+      const latencyMs = hasBuffer
+        ? Math.round((v.buffered.end(v.buffered.length - 1) - v.currentTime) * 1000)
+        : 0;
+      const bufferedMs = hasBuffer
+        ? Math.round((v.buffered.end(v.buffered.length - 1) - v.buffered.start(0)) * 1000)
+        : 0;
+      // speed 单位是 KB/s
+      const kbps = info && typeof info.speed === 'number' ? Math.round(info.speed * 8) : 0;
+
+      setStats({
+        latency: Math.max(0, latencyMs),
+        bufferLength: Math.max(0, bufferedMs),
+        fps,
+        bitrate: Math.max(0, kbps),
+      });
+    }, 1000);
+
+    return () => {
+      clearInterval(timer);
+      if (useRvfc && frameHandle != null) {
+        try { videoEl.cancelVideoFrameCallback(frameHandle); } catch { /* ignore */ }
+      }
+    };
+  }, [playerRef]);
 
   const toggleFullscreen = () => {
     const el = wrapperRef.current;
@@ -194,125 +266,29 @@ function LivePlayer({ stream, compact, onVideoReady, onVideoUnmount }) {
     }
   };
 
-  useEffect(() => {
-    if (!videoRef.current) return;
-    if (!flvjs.isSupported()) { setError('浏览器不支持FLV播放'); return; }
-
-    const playUrl = stream.flvPath
-      ? flvUrl(stream.flvPath)
-      : flvUrl(`/${stream.streamKey}.flv`);
-
-    const player = flvjs.createPlayer(
-      { type: 'flv', url: playUrl, isLive: true, hasAudio: true, hasVideo: true },
-      { 
-        enableWorker: false, 
-        enableStashBuffer: false, 
-        stashInitialSize: 32,  // 降低初始缓冲大小
-        autoCleanupSourceBuffer: true, 
-        autoCleanupMaxBackwardDuration: 2,  // 更激进地清理历史缓冲
-        autoCleanupMinBackwardDuration: 1, 
-        liveBufferLatencyChasing: true,
-        liveBufferLatencyMaxLatency: 0.5,  // 降低最大延迟阈值,更快触发追赶
-        liveBufferLatencyMinRemain: 0.1,   // 降低目标剩余缓冲,贴近实时
-        lazyLoad: false,  // 禁用懒加载
-        seekType: 'range'  // 使用 range 模式 seek
-      }
-    );
-
-    const onError = (t, d) => { console.error('FLV错误:', t, d); setError(`${t}: ${d}`); };
-    player.on(flvjs.Events.ERROR, onError);
-    playerRef.current = player;
-    player.attachMediaElement(videoRef.current);
-    player.load();
-    onVideoReady?.(stream.streamKey, videoRef.current);
-
-    const v = videoRef.current;
-    const tryPlay = () => v?.play?.().catch(e => console.warn('启播失败:', e.message));
-    v.addEventListener('loadeddata', tryPlay, { once: true });
-    v.addEventListener('canplay', tryPlay, { once: true });
-
-    const catchUpTimer = setInterval(() => {
-      if (!v || v.paused || !v.buffered.length) return;
-      const edge = v.buffered.end(v.buffered.length - 1);
-      const lag = edge - v.currentTime;
-      // 更激进的追播策略
-      if (lag > 0.8) {
-        v.currentTime = edge - 0.1;  // 追到更接近实时的位置
-      } else if (lag > 0.5) {
-        v.playbackRate = 1.2;  // 轻微加速追赶
-      } else {
-        v.playbackRate = 1.0;  // 恢复正常速度
-      }
-    }, 500);  // 更频繁地检查
-
-    // 统计信息更新
-    let lastDecodedFrames = 0;
-    let lastBytes = 0;
-    let lastTime = Date.now();
-    
-    const statsTimer = setInterval(() => {
-      if (!v || !playerRef.current) return;
-      
-      const stats = playerRef.current.statisticsInfo;
-      const currentTime = Date.now();
-      const deltaTime = (currentTime - lastTime) / 1000;
-      
-      if (stats && deltaTime > 0) {
-        // 计算 FPS
-        const currentFrames = stats.decodedFrames || 0;
-        const fps = Math.round((currentFrames - lastDecodedFrames) / deltaTime);
-        lastDecodedFrames = currentFrames;
-        
-        // 计算比特率 (kbps)
-        const currentBytes = (stats.videoDataRate || 0) + (stats.audioDataRate || 0);
-        const bitrate = Math.round(((currentBytes - lastBytes) * 8) / (deltaTime * 1000));
-        lastBytes = currentBytes;
-        
-        lastTime = currentTime;
-        
-        // 计算延迟和缓冲长度
-        const latency = v.buffered.length > 0 
-          ? Math.round((v.buffered.end(v.buffered.length - 1) - v.currentTime) * 1000) 
-          : 0;
-        const bufferLength = v.buffered.length > 0 
-          ? Math.round((v.buffered.end(v.buffered.length - 1) - v.buffered.start(0)) * 1000)
-          : 0;
-        
-        setStats({
-          latency: Math.max(0, latency),
-          bufferLength: Math.max(0, bufferLength),
-          fps: fps > 0 ? fps : stats.currentFps || 0,
-          bitrate: bitrate > 0 ? bitrate : Math.round((stats.speed || 0) / 1024)
-        });
-      }
-    }, 1000);
-
-    return () => {
-      clearInterval(statsTimer);
-      onVideoUnmount?.(stream.streamKey);
-      clearInterval(catchUpTimer);
-      v?.removeEventListener('loadeddata', tryPlay);
-      v?.removeEventListener('canplay', tryPlay);
-      const p = playerRef.current; playerRef.current = null;
-      if (!p) return;
-      try { p.off?.(flvjs.Events.ERROR, onError); p.unload(); p.detachMediaElement(); p.destroy(); } catch {}
-    };
-  }, [stream, reloadKey, onVideoUnmount]);
+  const retrying = state.phase === 'retrying';
+  const failed = state.phase === 'failed';
 
   return (
     <div className={`video-player-container ${compact ? 'compact' : ''}`}>
       <div className="video-header">
         <h2>{stream.streamKey}</h2>
         <div className="video-header-actions">
-          <span className="live-badge">🔴 直播中</span>
+          {retrying ? (
+            <span className="live-badge reconnecting-badge">⏳ 重连中 {state.attempt}</span>
+          ) : failed ? (
+            <span className="live-badge reconnecting-badge">⚠ 已断开</span>
+          ) : (
+            <span className="live-badge">🔴 直播中</span>
+          )}
           <button className="fullscreen-btn" onClick={toggleFullscreen}>
             {isFullscreen ? '⤓ 退出全屏' : '⛶ 全屏'}
           </button>
         </div>
       </div>
       <div className="video-wrapper" ref={wrapperRef} onDoubleClick={toggleFullscreen}>
-        <video ref={videoRef} key={reloadKey} className="video-player" controls playsInline />
-        
+        <video ref={videoRef} className="video-player" controls playsInline />
+
         {/* 实时统计信息 */}
         <div className="video-stats-overlay">
           <div className="stats-line">延迟: <span className={stats.latency > 1000 ? 'warn' : ''}>{stats.latency}ms</span></div>
@@ -320,16 +296,22 @@ function LivePlayer({ stream, compact, onVideoReady, onVideoUnmount }) {
           <div className="stats-line">帧率: {stats.fps} fps</div>
           <div className="stats-line">码率: {stats.bitrate} kbps</div>
         </div>
-        
-        {!hasInteracted && !error && (
+
+        {!hasInteracted && state.phase === 'connecting' && (
           <div className="play-overlay" onClick={() => { setHasInteracted(true); videoRef.current?.play?.().catch(() => {}); }}>
             <button className="play-button">{compact ? '▶' : '▶ 点击播放'}</button>
           </div>
         )}
-        {error && (
+        {retrying && (
+          <div className="reconnect-overlay">
+            <p>连接中断，{Math.ceil(state.delay / 1000)} 秒后第 {state.attempt} 次重连</p>
+            <button className="reconnect-btn" onClick={retryNow}>↻ 立即重连</button>
+          </div>
+        )}
+        {failed && (
           <div className="error-overlay">
-            <p>{error}</p>
-            <button className="reconnect-btn" onClick={() => { setError(null); setReloadKey(k => k+1); }}>↻ 重连</button>
+            <p>{state.message || '连接已断开'}</p>
+            <button className="reconnect-btn" onClick={retryNow}>↻ 重新连接</button>
           </div>
         )}
       </div>
@@ -337,7 +319,7 @@ function LivePlayer({ stream, compact, onVideoReady, onVideoUnmount }) {
         <div className="video-info">
           <p>开始时间: {new Date(stream.startTime).toLocaleString('zh-CN')}</p>
           <p>状态: {stream.status === 'online' ? '在线' : '离线'}</p>
-          <p>流地址: {flvUrl(stream.flvPath || `/${stream.streamKey}.flv`)}</p>
+          <p>流地址: {url}</p>
         </div>
       )}
     </div>
