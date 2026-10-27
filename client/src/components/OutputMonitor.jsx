@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import flvjs from 'flv.js';
-
-const FLV_HOST = 'http://localhost:8000';
+import { flvUrl } from '../config.js';
 
 /**
  * 主控窗口里的「PROGRAM 监视」浮窗
@@ -23,6 +22,10 @@ function OutputMonitor({ streamKey, streams }) {
     if (streamKey) setHidden(false);
   }, [streamKey]);
 
+  // 只依赖这一路自己的 FLV 地址：否则任何一路流上下线都会重建监视窗，画面会闪
+  const liveStream = streams.find(s => s.streamKey === streamKey && s.type !== 'local');
+  const liveFlvPath = streamKey ? (liveStream?.flvPath || `/${streamKey}.flv`) : null;
+
   useEffect(() => {
     const safeDestroy = () => {
       if (playerRef.current) {
@@ -38,13 +41,10 @@ function OutputMonitor({ streamKey, streams }) {
     safeDestroy();
     setError(null);
 
-    if (!streamKey || hidden || collapsed) return;
+    if (!streamKey || !liveFlvPath || hidden || collapsed) return;
     if (!videoRef.current || !flvjs.isSupported()) return;
 
-    const matched = streams.find(s => s.streamKey === streamKey);
-    const url = matched?.flvPath
-      ? `${FLV_HOST}${matched.flvPath}`
-      : `${FLV_HOST}/${streamKey}.flv`;
+    const url = flvUrl(liveFlvPath);
 
     const player = flvjs.createPlayer(
       { type: 'flv', url, isLive: true, hasAudio: false, hasVideo: true },
@@ -84,7 +84,7 @@ function OutputMonitor({ streamKey, streams }) {
       v?.removeEventListener('loadeddata', tryPlay);
       safeDestroy();
     };
-  }, [streamKey, streams, hidden, collapsed]);
+  }, [streamKey, liveFlvPath, hidden, collapsed]);
 
   if (!streamKey || hidden) return null;
 

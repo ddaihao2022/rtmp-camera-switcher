@@ -1,6 +1,5 @@
 import { useState } from 'react';
-
-const API = 'http://localhost:3001';
+import { apiUrl } from '../config.js';
 
 const RATE_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
@@ -19,7 +18,7 @@ function PlaySettingsPopover({ stream, onClose, onUpdate }) {
       const body = isImage
         ? { loop, autoplay, duration: Number(duration) || 0 }
         : { loop, autoplay, playbackRate };
-      await fetch(`${API}/api/local/${encodeURIComponent(keyPart)}`, {
+      await fetch(apiUrl('/api/local/${encodeURIComponent(keyPart)}'), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -113,7 +112,7 @@ export default function LocalMediaPanel({
         const fileName = typeof item === 'string'
           ? item.split(/[/\\]/).pop()
           : item.fileName;
-        await fetch(`${API}/api/local/add`, {
+        await fetch(apiUrl('/api/local/add'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filePath, fileName }),
@@ -126,7 +125,7 @@ export default function LocalMediaPanel({
 
   const handleRemove = async (streamKey) => {
     const keyPart = streamKey.replace(/^local\//, '');
-    await fetch(`${API}/api/local/${encodeURIComponent(keyPart)}`, { method: 'DELETE' });
+    await fetch(apiUrl('/api/local/${encodeURIComponent(keyPart)}'), { method: 'DELETE' });
     onRemove?.(streamKey);
   };
 

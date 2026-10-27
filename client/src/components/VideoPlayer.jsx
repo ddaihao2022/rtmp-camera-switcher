@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import flvjs from 'flv.js';
-
-const API = 'http://localhost:3001';
+import { apiUrl, flvUrl, localStreamUrl } from '../config.js';
 
 const RATE_CYCLE = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
 async function patchLocalSettings(streamKey, patch) {
   const keyPart = streamKey.replace(/^local\//, '');
-  await fetch(`${API}/api/local/${encodeURIComponent(keyPart)}`, {
+  await fetch(apiUrl(`/api/local/${encodeURIComponent(keyPart)}`), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
@@ -28,9 +27,7 @@ function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount, onEnded })
   const duration = Number(stream.duration ?? (isImage ? 5 : 0));
 
   // 构建可访问的 URL
-  const mediaUrl = stream.filePath?.startsWith('blob:')
-    ? stream.filePath
-    : `${API}/api/local/stream/${encodeURIComponent(stream.streamKey.replace(/^local\//, ''))}`;
+  const mediaUrl = localStreamUrl(stream);
 
   useEffect(() => {
     const handleFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -142,9 +139,11 @@ function LocalPlayer({ stream, compact, onVideoReady, onVideoUnmount, onEnded })
           />
         ) : isAudio ? (
           <audio ref={mediaRef} src={mediaUrl} controls className="local-audio"
+            crossOrigin="anonymous"
             autoPlay={autoplay} loop={loop} />
         ) : (
           <video ref={mediaRef} src={mediaUrl} className="video-player" controls playsInline
+            crossOrigin="anonymous"
             autoPlay={autoplay} loop={loop} />
         )}
       </div>
@@ -199,13 +198,12 @@ function LivePlayer({ stream, compact, onVideoReady, onVideoUnmount }) {
     if (!videoRef.current) return;
     if (!flvjs.isSupported()) { setError('浏览器不支持FLV播放'); return; }
 
-    const FLV_HOST = 'http://localhost:8000';
-    const flvUrl = stream.flvPath
-      ? `${FLV_HOST}${stream.flvPath}`
-      : `${FLV_HOST}/${stream.streamKey}.flv`;
+    const playUrl = stream.flvPath
+      ? flvUrl(stream.flvPath)
+      : flvUrl(`/${stream.streamKey}.flv`);
 
     const player = flvjs.createPlayer(
-      { type: 'flv', url: flvUrl, isLive: true, hasAudio: true, hasVideo: true },
+      { type: 'flv', url: playUrl, isLive: true, hasAudio: true, hasVideo: true },
       { 
         enableWorker: false, 
         enableStashBuffer: false, 
@@ -339,7 +337,7 @@ function LivePlayer({ stream, compact, onVideoReady, onVideoUnmount }) {
         <div className="video-info">
           <p>开始时间: {new Date(stream.startTime).toLocaleString('zh-CN')}</p>
           <p>状态: {stream.status === 'online' ? '在线' : '离线'}</p>
-          <p>流地址: {stream.flvPath ? `http://localhost:8000${stream.flvPath}` : `http://localhost:8000/${stream.streamKey}.flv`}</p>
+          <p>流地址: {flvUrl(stream.flvPath || `/${stream.streamKey}.flv`)}</p>
         </div>
       )}
     </div>

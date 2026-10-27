@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
-
-const API = 'http://localhost:3001';
+import { SOCKET_URL, apiUrl, describeServer, setServer, resetServer, getOutputAudio, setOutputAudio } from '../config.js';
 
 const POSITIONS = [
   { value: 'top-left',     label: '↖ 左上' },
@@ -31,8 +30,8 @@ function WatermarkSection() {
   const socketRef = useRef(null);
 
   useEffect(() => {
-    fetch(`${API}/api/watermark`).then(r => r.json()).then(setCfg).catch(() => {});
-    const socket = io(API);
+    fetch(apiUrl('/api/watermark')).then(r => r.json()).then(setCfg).catch(() => {});
+    const socket = io(SOCKET_URL);
     socketRef.current = socket;
     socket.on('watermark:update', setCfg);
     return () => socket.disconnect();
@@ -43,7 +42,7 @@ function WatermarkSection() {
     setCfg(next);
     setSaving(true);
     try {
-      await fetch(`${API}/api/watermark`, {
+      await fetch(apiUrl('/api/watermark'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(next),
@@ -152,6 +151,7 @@ function HdmiSection() {
   const [displays, setDisplays] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [outputOpen, setOutputOpen] = useState(false);
+  const [withAudio, setWithAudio] = useState(() => getOutputAudio());
 
   const refresh = async () => {
     if (!api) return;
@@ -199,7 +199,7 @@ function HdmiSection() {
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             {!outputOpen ? (
               <button className="settings-btn-primary"
-                onClick={async () => { await api.openOutput(selectedId); setOutputOpen(true); }}>
+                onClick={async () => { await api.openOutput(selectedId, { withAudio }); setOutputOpen(true); }}>
                 ▶ 开启全屏输出
               </button>
             ) : (
@@ -209,11 +209,76 @@ function HdmiSection() {
               </button>
             )}
           </div>
+          <div className="settings-row" style={{ marginTop: 10 }}>
+            <label className="settings-toggle">
+              <input type="checkbox" checked={withAudio}
+                onChange={e => { setWithAudio(e.target.checked); setOutputAudio(e.target.checked); }} />
+              <span className="settings-toggle-track" />
+              <span className="settings-toggle-label">输出带声音</span>
+            </label>
+          </div>
           <p className="settings-muted" style={{ marginTop: 6 }}>
             {outputOpen ? '输出窗口正在目标显示器上全屏运行' : '将在选中显示器上全屏播放当前主输出流'}
           </p>
+          {withAudio && (
+            <p className="settings-muted">
+              已开启输出声音：输出窗口会自行播放音频。请在 🎚 音频混音台把该路静音，否则主窗口会同时出声造成叠音。
+              改动需要关闭后重新开启输出才生效。
+            </p>
+          )}
         </>
       )}
+    </section>
+  );
+}
+
+// ─── 服务端地址分组 ───────────────────────────────────────────────────────────
+function ServerSection() {
+  const info = describeServer();
+  const [value, setValue] = useState(info.host);
+  const trimmed = value.trim();
+  const dirty = !!trimmed && trimmed !== info.host;
+
+  const apply = () => {
+    if (!dirty) return;
+    setServer(trimmed);
+    window.location.reload();
+  };
+
+  const clear = () => {
+    resetServer();
+    window.location.reload();
+  };
+
+  return (
+    <section className="settings-section">
+      <div className="settings-section-title">🌐 服务端地址</div>
+      <div className="settings-row">
+        <input
+          className="settings-select"
+          value={value}
+          placeholder="例如 192.168.1.50"
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') apply(); }}
+        />
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <button className="settings-btn-primary" onClick={apply} disabled={!dirty}>
+          保存并重载
+        </button>
+        <button className="settings-btn-outline" onClick={clear}>
+          恢复默认
+        </button>
+      </div>
+      <p className="settings-muted">
+        当前 API：{info.api}
+        <br />
+        当前 FLV：{info.flv}
+      </p>
+      <p className="settings-muted">
+        用于「服务端与画面输出机分离」的部署：把这里改成运行 server 那台机器的内网 IP。
+        保存后本窗口自动重载，音频混音台与 HDMI 输出窗口需要重新打开。
+      </p>
     </section>
   );
 }
@@ -232,7 +297,7 @@ function LogSection() {
           setVerbose(s.verbose);
           api.onLogStatusChanged(d => setVerbose(d.verbose));
         } else {
-          const r = await fetch(`${API}/api/log/status`);
+          const r = await fetch(apiUrl('/api/log/status'));
           const d = await r.json();
           setVerbose(d.verbose);
         }
@@ -249,7 +314,7 @@ function LogSection() {
         const r = await api.toggleLog(next);
         setVerbose(r.verbose);
       } else {
-        const r = await fetch(`${API}/api/log/toggle`, {
+        const r = await fetch(apiUrl('/api/log/toggle'), {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ verbose: next }),
         });
@@ -302,6 +367,7 @@ export default function SettingsModal({ open, onClose }) {
         <div className="settings-modal-body">
           <HdmiSection />
           <WatermarkSection />
+          <ServerSection />
           <LogSection />
         </div>
       </div>

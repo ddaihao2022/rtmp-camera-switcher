@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
+import { SOCKET_URL, apiUrl } from './config.js';
 import './AudioView.css';
-
-const API_HOST = 'http://localhost:3001';
 
 // ─── 单路音频条（仅控制，不拉流） ─────────────────────────────────────────────
 function Channel({ streamKey, type, fileType, outputStream, socket, initVol, initMuted, vuData }) {
@@ -116,7 +115,7 @@ function AudioView() {
   const socketRef = useRef(null);
 
   useEffect(() => {
-    const socket = io(API_HOST);
+    const socket = io(SOCKET_URL);
     socketRef.current = socket;
 
     socket.on('streamUpdate', setStreams);
@@ -124,9 +123,9 @@ function AudioView() {
     socket.on('audio:stateUpdate', (state) => setAudioState(state));
     socket.on('audio:vuData', (data) => setVuData(data));
 
-    fetch(`${API_HOST}/api/output`).then(r => r.json())
+    fetch(apiUrl('/api/output')).then(r => r.json())
       .then(d => d.selectedStream && setOutputStream(d.selectedStream)).catch(() => {});
-    fetch(`${API_HOST}/api/audio/state`).then(r => r.json())
+    fetch(apiUrl('/api/audio/state')).then(r => r.json())
       .then(d => setAudioState(d)).catch(() => {});
 
     return () => socket.disconnect();

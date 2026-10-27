@@ -8,9 +8,10 @@ import SettingsModal from './components/SettingsModal';
 import LocalMediaPanel from './components/LocalMediaPanel';
 import RecordPanel from './components/RecordPanel';
 import { connectStream, disconnectStream, setVolume, setMute, onVuData } from './audio.js';
+import { SOCKET_URL, apiUrl } from './config.js';
 import './App.css';
 
-const socket = io('http://localhost:3001');
+const socket = io(SOCKET_URL);
 
 function App() {
   const [streams, setStreams] = useState([]);
@@ -45,18 +46,20 @@ function App() {
     if (window.electronAPI?.openAudioWindow) {
       window.electronAPI.openAudioWindow();
     } else {
-      window.open('http://localhost:5173/?view=audio', '_blank', 'width=720,height=480');
+      // 浏览器里没有多窗口 API，按当前页面地址派生混音台地址（不能写死 5173）
+      const url = `${window.location.origin}${window.location.pathname}?view=audio`;
+      window.open(url, '_blank', 'width=720,height=480');
     }
   };
 
   useEffect(() => {
-    fetch('http://localhost:3001/api/audio/state')
+    fetch(apiUrl('/api/audio/state'))
       .then(r => r.json())
       .then(d => { audioStateRef.current = d; })
       .catch(() => {});
 
     // 拉取服务器内网信息,得到真实 LAN IP 推流地址
-    fetch('http://localhost:3001/api/server-info')
+    fetch(apiUrl('/api/server-info'))
       .then(r => r.json())
       .then(d => d.rtmpBase && setRtmpBase(d.rtmpBase))
       .catch(() => {});
@@ -160,7 +163,7 @@ function App() {
 
   const handleSelectOutput = async (streamKey) => {
     try {
-      const response = await fetch('http://localhost:3001/api/output/select', {
+      const response = await fetch(apiUrl('/api/output/select'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ streamKey }),

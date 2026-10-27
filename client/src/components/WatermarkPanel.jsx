@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
-
-const API = 'http://localhost:3001';
+import { SOCKET_URL, apiUrl } from '../config.js';
 
 const POSITIONS = [
   { value: 'top-left',     label: '↖ 左上' },
@@ -30,9 +29,9 @@ function WatermarkPanel() {
   const socketRef = useRef(null);
 
   useEffect(() => {
-    fetch(`${API}/api/watermark`).then(r => r.json()).then(setCfg).catch(() => {});
+    fetch(apiUrl('/api/watermark')).then(r => r.json()).then(setCfg).catch(() => {});
 
-    const socket = io(API);
+    const socket = io(SOCKET_URL);
     socketRef.current = socket;
     socket.on('watermark:update', setCfg);
     return () => socket.disconnect();
@@ -43,7 +42,7 @@ function WatermarkPanel() {
     setCfg(next);
     setSaving(true);
     try {
-      await fetch(`${API}/api/watermark`, {
+      await fetch(apiUrl('/api/watermark'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(next),
