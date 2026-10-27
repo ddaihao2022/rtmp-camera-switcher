@@ -35,3 +35,8 @@ android/replay_pid*.log
 # 本地工具运行时状态
 .mimosa/
 .workbuddy/
+# 本地临时产物（不入库）
+__pycache__/
+备份_原始策划书/
+workbuddy-split/
+/*.docx
