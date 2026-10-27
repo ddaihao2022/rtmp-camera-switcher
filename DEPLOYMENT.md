@@ -1,6 +1,6 @@
 # 部署指南 · Deployment
 
-本文档对应 **1.1.0** 的架构：Electron 桌面端 + 内置 Node 服务（node-media-server + Express + Socket.io）。
+本文档对应 **1.1.1** 的架构：Electron 桌面端 + 内置 Node 服务（node-media-server + Express + Socket.io）。
 旧文档里提到的「Web 界面 :3000 / HLS 分片」已经不再使用，RTMP 播放走 HTTP-FLV（:8000）。
 
 ---
@@ -122,7 +122,7 @@ npm run build:dir    # 只出免安装目录，快速验证
 
 产物：
 
-- Windows：`RTMP Camera Switcher Setup 1.1.0.exe`（NSIS）
+- Windows：`RTMP Camera Switcher Setup 1.1.1.exe`（NSIS）
 - macOS：`.dmg`
 - Linux：`.AppImage`
 

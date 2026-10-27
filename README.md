@@ -1,7 +1,7 @@
 # RTMP Camera Switcher · RTMP 多摄影设备管理系统
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.0-blue" />
+  <img src="https://img.shields.io/badge/version-1.1.1-blue" />
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" />
   <img src="https://img.shields.io/badge/license-GPL--3.0-green" />
   <img src="https://img.shields.io/badge/electron-31-47848F" />
@@ -25,7 +25,7 @@
 
 | 功能 | Feature | 说明 |
 |---|---|---|
-| 多路预览 | Multi-stream preview | 单屏 / 网格视图，最多同时预览 4 路 |
+| 多路预览 | Multi-stream preview | 单屏 / 网格视图，网格支持 1–8 路 |
 | HDMI 输出切换 | HDMI output switching | 任意流全屏输出到第二显示器，切换实时生效 |
 | 输出带声音 | Output audio | 可选让输出窗口自行出声（默认静音，避免与主窗口叠音） |
 | 音频混音台 | Audio mixer | 独立窗口，VU 表 + 频谱 + 音量推子 + 静音，不额外拉流 |
@@ -33,6 +33,7 @@
 | 水印叠加 | Watermark overlay | 文字或图片水印，低透明度叠在输出画面上 |
 | 输出录制 | Output recording | 边录边写盘，长录制不占内存；音轨取自混音台实际输出 |
 | 数字快捷键 | Number key switching | 按 1–9 直接切换输出源 |
+| 自动重连 | Auto reconnect | 断流后指数退避自动重连 + 12s 卡死看门狗，预览 / 输出 / 监视三处生效 |
 | 断流保持输出 | Output hold on reconnect | 断流后 30 秒内同设备重连，输出自动续上，HDMI 不黑屏 |
 | 远端服务端 | Remote server | 设置里填内网 IP，即可把收流机与控制机分开部署 |
 | 设置面板 | Settings panel | 统一的设置弹窗管理 HDMI、水印、服务端地址、调试日志 |

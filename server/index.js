@@ -273,6 +273,13 @@ nms.on('donePublish', (session) => {
   const streamKey = streamPath.replace(/^\/+|\/+$/g, '');
   activeStreams.delete(streamKey);
 
+  // 流下线就丢掉它的音量/静音状态，否则长期运行会在 audioState 里越积越多，
+  // 而且同一设备重推时会突然套用上次的音量
+  if (audioState[streamKey]) {
+    delete audioState[streamKey];
+    io.emit('audio:stateUpdate', audioState);
+  }
+
   // 断流不立刻取消输出：现场 RTMP 抖动、OBS 换场景重连都很常见，
   // 若此时把输出清空，HDMI 那块屏会直接黑成「未选择输出画面」，得人工再点一次。
   // 这里给一个宽限期，期间同一 streamKey 重新上线就自动续上；真下线了才清。
@@ -439,7 +446,13 @@ app.patch('/api/local/:key(*)', (req, res) => {
 // 移除本地文件虚拟流
 app.delete('/api/local/:key(*)', (req, res) => {
   const key = req.params.key;
+  const fullKey = key.startsWith('local/') ? key : 'local/' + key;
+  localFiles.delete(fullKey);
   localFiles.delete(key);
+  if (audioState[fullKey]) {
+    delete audioState[fullKey];
+    io.emit('audio:stateUpdate', audioState);
+  }
   io.emit('streamUpdate', [...Array.from(activeStreams.values()), ...Array.from(localFiles.values())]);
   res.json({ success: true });
 });

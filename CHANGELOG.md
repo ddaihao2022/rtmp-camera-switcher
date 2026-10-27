@@ -1,5 +1,65 @@
 # 变更记录 · Changelog
 
+## 1.1.1
+
+这一版集中在**现场稳定性**：断流能自己恢复，不用人工盯。
+
+### 新增
+
+- **直播播放器自动重连**
+  摄像机重启、交换机抖动、OBS 换场景都会让 HTTP-FLV 连接断掉；旧实现只会弹一个「↻ 重连」按钮，
+  现场得有人盯着点。现在：指数退避重连（2s → 4s → 8s → 15s，最多 8 次，约 90 秒），
+  播起来立刻重置退避；连续失败到上限才转人工。
+  另外加了 **12 秒卡死看门狗**：连接没断但画面不再推进时，flv.js 不一定报错，这种情况由看门狗主动重连。
+  预览窗口、HDMI 输出窗口、PROGRAM 监视窗三处统一生效。
+  相关文件：`client/src/useLivePlayer.js`（新增）、`VideoPlayer.jsx`、`OutputView.jsx`、`OutputMonitor.jsx`
+
+- **网格视图支持 5–8 路**
+  之前只定义了 `.grid-1..4`，超过 4 路布局会塌；现在补了 5–8 路的三列/四列布局。
+
+### 修复
+
+- **断流时不再清空预览选中**
+  `streamUpdate` 原本在该流下线时把 `selectedStream` 置空，导致播放器组件被卸载 —— 播放器都没了，
+  自动重连自然无从谈起。现在 RTMP 设备保留选中状态（本地媒体被移除才清空），
+  恢复后无需人工再点一次。
+  相关文件：`client/src/App.jsx`
+
+- **帧率 / 码率统计口径修正**
+  原代码读 `statisticsInfo.videoDataRate` / `audioDataRate`，但这两个字段属于 `MediaInfo` 而不是
+  `statisticsInfo`，所以码率一直显示 0（`speed` 是 KB/s，才是对的来源）。
+  帧率则改用 `requestVideoFrameCallback` 数真正呈现的帧 ——
+  实测 `video.getVideoPlaybackQuality().totalVideoFrames` 在 Electron 31 的 MSE 播放链路上是死值
+  （一直停在 212 不动），按它算差值永远得 0。
+  相关文件：`client/src/components/VideoPlayer.jsx`
+
+- **服务端清理音频状态**
+  流下线 / 本地媒体移除时同步删掉 `audioState` 里的对应 key，避免长跑后无限增长，
+  也避免同一设备重推时意外套用上次的音量。
+
+### 重构
+
+- 三个播放器（预览 / HDMI 输出 / PROGRAM 监视）原本各写一份 `createPlayer` 配置和追播定时器，
+  参数还不一致（`stashInitialSize` 32 vs 128、`maxLatency` 0.5 vs 1.0…）。
+  现在集中到 `client/src/flvPlayer.js`，播放器生命周期与重连逻辑收进 `client/src/useLivePlayer.js`。
+- 删除两个从未被引用的组件：`AudioPanel.jsx`、`WatermarkPanel.jsx`
+  （水印 UI 实际在 `SettingsModal` 里，混音 UI 在 `AudioView` 里）。
+
+### 关于 Web Worker（这一版没能用上）
+
+原本的计划是打开 `enableWorker`，把 FLV 解封装挪出主线程，减轻多路预览的 CPU 压力。
+实测在 Vite 下开 `true` 会抛：
+
+```
+Uncaught TypeError: Cannot read properties of undefined (reading 'call')
+```
+
+原因是 flv.js 1.6.2 的 dist 用 `webworkify-webpack` 起 worker，依赖 webpack 运行时，
+在非 webpack 打包器里初始化失败，transmuxer 永远拿不到数据（画面黑屏、`readyState` 一直是 0）。
+所以这一版仍然保持 `enableWorker: false`，原因写在 `flvPlayer.js` 的注释里。
+要真正用上 worker，需要换成 **mpegts.js**（flv.js 的活跃分支，原生支持 Worker 与 ESM），
+那是一次播放库替换，必须重测追播与重连行为。
+
 ## 1.1.0
 
 这一版集中在**可用性与稳定性**，没有改 UI 结构。
