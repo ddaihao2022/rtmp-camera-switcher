@@ -59,7 +59,12 @@ export function connectStream(streamKey, videoEl) {
 export function disconnectStream(streamKey) {
   const ch = channels.get(streamKey);
   if (!ch) return;
-  try { ch.gain.disconnect(); ch.analyser.disconnect(); ch.source.disconnect(); } catch {}
+  try {
+    ch.gain.disconnect();
+    ch.analyser.disconnect();
+    ch.source.disconnect();
+    if (ch.recordDest) ch.recordDest.disconnect();
+  } catch {}
   channels.delete(streamKey);
 }
 
@@ -115,6 +120,27 @@ export function getFreqBars(streamKey, bins = 32) {
 
 export function getChannelKeys() {
   return Array.from(channels.keys());
+}
+
+/**
+ * 取该路「耳朵听到的声音」的 MediaStream，用于录制。
+ *
+ * 为什么不用 videoEl.captureStream()：元素一旦被 createMediaElementSource 接进 Web Audio，
+ * 它的音频输出就由 Web Audio 图接管，captureStream 拿到的音轨往往是静音轨。
+ * 这里从 gain 之后取一份，录到的就是经过推子/静音的真实输出。
+ */
+export function getRecordingAudioStream(streamKey) {
+  const ch = channels.get(streamKey);
+  if (!ch) return null;
+  if (!ch.recordDest) {
+    try {
+      ch.recordDest = getCtx().createMediaStreamDestination();
+      ch.gain.connect(ch.recordDest);
+    } catch {
+      return null;
+    }
+  }
+  return ch.recordDest.stream;
 }
 
 /** 返回所有频道当前增益状态，供音频窗口初始化用 */

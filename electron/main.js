@@ -106,15 +106,16 @@ function openAudioWindow() {
       nodeIntegration: false
     }
   });
-  loadView(audioWin, 'audio');
+  loadView(audioWin, { view: 'audio' });
   audioWin.on('closed', () => { audioWin = null; });
 }
 
-function loadView(win, view) {
+function loadView(win, query = null) {
+  const search = query ? new URLSearchParams(query).toString() : '';
   if (isDev) {
-    win.loadURL(view ? `${DEV_URL}/?view=${view}` : DEV_URL);
+    win.loadURL(search ? `${DEV_URL}/?${search}` : DEV_URL);
   } else {
-    win.loadFile(PROD_INDEX, view ? { search: `?view=${view}` } : {});
+    win.loadFile(PROD_INDEX, search ? { search: `?${search}` } : {});
   }
 }
 
@@ -158,6 +159,8 @@ function createControlWindow() {
   loadView(controlWin, null);
   controlWin.on('closed', () => {
     controlWin = null;
+    // 主窗口关掉时若还在录制，先把写入流收尾，避免文件句柄悬挂
+    if (recordSession) finishRecordSession();
     if (outputWin) outputWin.close();
   });
 }
@@ -215,7 +218,7 @@ function buildMenu() {
   ]);
 }
 
-function createOutputWindow(displayId) {
+function createOutputWindow(displayId, { withAudio = false } = {}) {
   if (outputWin) { outputWin.close(); outputWin = null; }
 
   const displays = screen.getAllDisplays();
@@ -241,7 +244,7 @@ function createOutputWindow(displayId) {
       nodeIntegration: false
     }
   });
-  loadView(outputWin, 'output');
+  loadView(outputWin, withAudio ? { view: 'output', audio: '1' } : { view: 'output' });
   outputWin.on('closed', () => {
     outputWin = null;
     if (controlWin && !controlWin.isDestroyed()) {
@@ -261,8 +264,8 @@ ipcMain.handle('displays:list', () => {
   }));
 });
 
-ipcMain.handle('output:open', (_e, displayId) => {
-  createOutputWindow(displayId);
+ipcMain.handle('output:open', (_e, displayId, opts) => {
+  createOutputWindow(displayId, opts || {});
   return { success: true };
 });
 
@@ -290,18 +293,87 @@ ipcMain.handle('log:toggle', async (_e, verbose) => {
 
 ipcMain.handle('audio:open', () => { openAudioWindow(); return { success: true }; });
 
-// 录制文件保存
-ipcMain.handle('record:save', async (_e, { buffer, ext }) => {
+// ─── 录制：边录边写盘 ─────────────────────────────────────────────────────────
+// 旧实现让渲染进程把整段录制的 chunk 攒在内存里，停止时一次性 arrayBuffer → IPC → writeFileSync。
+// 几分钟 1080p 就吃掉数 GB 内存、拷贝一次全量数据并同步阻塞主进程。
+// 现在：开始时建好写入流，每收到一块就追加写盘，渲染进程侧不再持有历史数据。
+let recordSession = null; // { id, stream, filePath, bytes, error }
+
+function finishRecordSession() {
+  const session = recordSession;
+  recordSession = null;
+  if (!session) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    if (session.stream.writableEnded || session.stream.destroyed) {
+      resolve(session);
+      return;
+    }
+    session.stream.once('close', () => resolve(session));
+    session.stream.end();
+  });
+}
+
+ipcMain.handle('record:start', async (_e, { ext = 'webm' } = {}) => {
+  // 上一次会话没收尾（如渲染进程异常）先关掉，避免句柄泄漏
+  if (recordSession) await finishRecordSession();
+
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const result = await dialog.showSaveDialog(controlWin, {
     title: '保存录制文件',
     defaultPath: path.join(app.getPath('videos'), `recording-${ts}.${ext}`),
     filters: [{ name: '视频文件', extensions: [ext] }]
   });
-  if (result.canceled || !result.filePath) return { success: false };
-  fs.writeFileSync(result.filePath, Buffer.from(buffer));
-  shell.showItemInFolder(result.filePath);
-  return { success: true, filePath: result.filePath };
+  if (result.canceled || !result.filePath) return { success: false, canceled: true };
+
+  const stream = fs.createWriteStream(result.filePath);
+  const session = {
+    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    stream,
+    filePath: result.filePath,
+    bytes: 0,
+    error: null,
+  };
+  stream.on('error', (err) => {
+    session.error = err.message;
+    if (recordSession === session) recordSession = null;
+  });
+  recordSession = session;
+  return { success: true, sessionId: session.id, filePath: session.filePath };
+});
+
+// 用 send（不 invoke）保证分块顺序，也不会给渲染进程造成逐块 RTT
+ipcMain.on('record:chunk', (_e, payload) => {
+  const session = recordSession;
+  if (!session || !payload || session.id !== payload.sessionId) return;
+  const { chunk } = payload;
+  if (!chunk || !chunk.byteLength) return;
+  const buf = Buffer.from(chunk);
+  session.bytes += buf.length;
+  // 写不动时交给可写流自身缓冲（远小于旧实现的整段驻留），不丢块以免容器损坏
+  session.stream.write(buf);
+});
+
+ipcMain.handle('record:end', async (_e, sessionId) => {
+  const session = recordSession;
+  if (!session || session.id !== sessionId) {
+    return { success: false, error: '录制会话不存在或已结束' };
+  }
+  await finishRecordSession();
+  if (session.error) return { success: false, error: session.error };
+  if (session.bytes === 0) {
+    try { fs.unlinkSync(session.filePath); } catch { /* ignore */ }
+    return { success: false, error: '没有收到任何录制数据' };
+  }
+  shell.showItemInFolder(session.filePath);
+  return { success: true, filePath: session.filePath, bytes: session.bytes };
+});
+
+ipcMain.handle('record:cancel', async (_e, sessionId) => {
+  const session = recordSession;
+  if (!session || session.id !== sessionId) return { success: false };
+  await finishRecordSession();
+  try { fs.unlinkSync(session.filePath); } catch { /* ignore */ }
+  return { success: true };
 });
 
 // 本地媒体文件选择（音视频 + 图片）
@@ -345,6 +417,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  if (recordSession) finishRecordSession();
   if (process.platform !== 'darwin') {
     if (logStream) logStream.end();
     app.quit();
