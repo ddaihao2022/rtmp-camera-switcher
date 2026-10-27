@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import flvjs from 'flv.js';
+import { SOCKET_URL, apiUrl, flvUrl, localStreamUrl } from './config.js';
 import './OutputView.css';
-
-const API_HOST = 'http://localhost:3001';
-const FLV_HOST = 'http://localhost:8000';
 
 const POSITION_STYLE = {
   'top-left':     { top: 0,    left: 0,    bottom: 'auto', right: 'auto' },
@@ -59,6 +57,16 @@ function OutputView() {
   const [error, setError] = useState(null);
   const [watermark, setWatermark] = useState(null);
 
+  // ?audio=1 时输出窗口带声音；默认只有画面，避免与主窗口音频叠音。
+  // 打开展示端扬声器出声时，建议在混音台把该路静音（主窗口静音，输出窗口仍出声）。
+  const withAudio = (() => {
+    try {
+      return new URLSearchParams(window.location.search).get('audio') === '1';
+    } catch {
+      return false;
+    }
+  })();
+
   // 仅在输出视图下打开「全屏黑背景 + 隐藏鼠标」模式,卸载时复原
   useEffect(() => {
     document.body.classList.add('output-mode');
@@ -67,7 +75,7 @@ function OutputView() {
 
   // 拉取一次当前已选输出
   useEffect(() => {
-    fetch(`${API_HOST}/api/output`)
+    fetch(apiUrl('/api/output'))
       .then(r => r.json())
       .then(d => d.selectedStream && setStreamKey(d.selectedStream))
       .catch(() => {});
@@ -75,7 +83,7 @@ function OutputView() {
 
   // 接收实时事件
   useEffect(() => {
-    const socket = io(API_HOST);
+    const socket = io(SOCKET_URL);
     socket.on('streamUpdate', setStreams);
     socket.on('outputSelected', ({ streamKey }) => setStreamKey(streamKey || null));
     socket.on('watermark:update', setWatermark);
@@ -84,8 +92,18 @@ function OutputView() {
 
   // 拉取初始水印配置
   useEffect(() => {
-    fetch(`${API_HOST}/api/watermark`).then(r => r.json()).then(setWatermark).catch(() => {});
+    fetch(apiUrl('/api/watermark')).then(r => r.json()).then(setWatermark).catch(() => {});
   }, []);
+
+  const isLive = streamKey && streams.some(s => s.streamKey === streamKey);
+  const localItem = streams.find(s => s.streamKey === streamKey && s.type === 'local');
+
+  const localUrl = localItem ? localStreamUrl(localItem) : null;
+
+  // 只把「这一路实际的 FLV 地址」作为依赖：
+  // 之前依赖整个 streams 数组，任何一路上下线都会重建播放器，导致 HDMI 画面闪一下。
+  const liveStream = streams.find(s => s.streamKey === streamKey && s.type !== 'local');
+  const liveFlvPath = streamKey ? (liveStream?.flvPath || `/${streamKey}.flv`) : null;
 
   // 选中流变化时,重建播放器
   useEffect(() => {
@@ -102,15 +120,12 @@ function OutputView() {
 
     safeDestroy();
     setError(null);
-    if (!streamKey || !videoRef.current || !flvjs.isSupported()) return;
+    if (!streamKey || !liveFlvPath || !videoRef.current || !flvjs.isSupported()) return;
 
-    const matched = streams.find(s => s.streamKey === streamKey);
-    const url = matched?.flvPath
-      ? `${FLV_HOST}${matched.flvPath}`
-      : `${FLV_HOST}/${streamKey}.flv`;
+    const url = flvUrl(liveFlvPath);
 
     const player = flvjs.createPlayer(
-      { type: 'flv', url, isLive: true, hasAudio: false, hasVideo: true },
+      { type: 'flv', url, isLive: true, hasAudio: withAudio, hasVideo: true },
       {
         enableWorker: false,
         enableStashBuffer: false,
@@ -155,16 +170,7 @@ function OutputView() {
       v?.removeEventListener('loadeddata', tryPlay);
       safeDestroy();
     };
-  }, [streamKey, streams]);
-
-  const isLive = streamKey && streams.some(s => s.streamKey === streamKey);
-  const localItem = streams.find(s => s.streamKey === streamKey && s.type === 'local');
-
-  const localUrl = localItem
-    ? (localItem.filePath?.startsWith('blob:')
-        ? localItem.filePath
-        : `http://localhost:3001/api/local/stream/${encodeURIComponent(localItem.streamKey.replace(/^local\//, ''))}`)
-    : null;
+  }, [streamKey, liveFlvPath, withAudio]);
 
   return (
     <div className="output-root">
@@ -176,6 +182,7 @@ function OutputView() {
                 <p className="output-audio-label">🎵 {localItem.fileName}</p>
                 <audio src={localUrl} autoPlay={localItem.autoplay ?? true}
                   loop={localItem.loop ?? false} controls className="output-audio"
+                  muted={!withAudio}
                   ref={el => { if (el) el.playbackRate = localItem.playbackRate ?? 1.0; }} />
               </div>
             ) : localItem.fileType === 'image' ? (
@@ -183,11 +190,12 @@ function OutputView() {
             ) : (
               <video src={localUrl} className="output-video"
                 autoPlay={localItem.autoplay ?? true} playsInline controls={false}
+                muted={!withAudio}
                 loop={localItem.loop ?? false}
                 ref={el => { if (el) el.playbackRate = localItem.playbackRate ?? 1.0; }} />
             )
           ) : (
-            <video ref={videoRef} className="output-video" autoPlay muted playsInline />
+            <video ref={videoRef} className="output-video" autoPlay muted={!withAudio} playsInline />
           )}
           <Watermark config={watermark} />
           {!isLive && !localItem && (

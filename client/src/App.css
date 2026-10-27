@@ -1871,3 +1871,22 @@
 .stats-line span.warn {
   color: #f59e0b;
 }
+
+/* HDMI 输出「带声音」开关 */
+.hdmi-audio-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.625rem;
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  user-select: none;
+}
+
+.hdmi-audio-row input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: #f59e0b;
+  cursor: pointer;
+}

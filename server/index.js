@@ -3,6 +3,8 @@ const NmsContext = require('node-media-server/src/core/context');
 const express = require('express');
 const http = require('http');
 const os = require('os');
+const fs = require('fs');
+const path = require('path');
 const socketIo = require('socket.io');
 const cors = require('cors');
 
@@ -17,6 +19,8 @@ const logger = {
   isVerbose: () => verboseLog,
   setVerbose: (v) => {
     verboseLog = !!v;
+    // 让诊断钩子随开关挂上/摘下，避免关闭日志后仍在收包热路径上做无谓计数
+    syncDiagHooks();
     console.log(`[LOG] 详细日志已${verboseLog ? '开启' : '关闭'}`);
   }
 };
@@ -41,14 +45,21 @@ function getLanIp() {
   return candidates[0]?.address || '127.0.0.1';
 }
 
-// 诊断:监控所有 BroadcastServer，在每次广播 packet 时记录（仅 verbose 模式）
+// 诊断挂钩：仅在 verbose 开启时挂载。
+// 这些钩子会包住 broadcastMessage / onPacketCallback —— 它们位于 RTMP 收包热路径上，
+// 即使不输出日志，也会给每个 packet 增加一次函数调用和计数开销，因此默认不挂。
 const broadcastStats = new Map();
-setInterval(() => {
-  for (const [path, broadcast] of NmsContext.broadcasts.entries()) {
+const inBytesLast = new Map();
+let diagPatchTimer = null;
+let diagReportTimer = null;
+
+function patchDiagHooks() {
+  for (const [streamPath, broadcast] of NmsContext.broadcasts.entries()) {
     if (!broadcast.__patched__) {
       const orig = broadcast.broadcastMessage;
       const stat = { calls: 0, bytes: 0 };
-      broadcastStats.set(path, stat);
+      broadcastStats.set(streamPath, stat);
+      broadcast.__origBroadcastMessage__ = orig;
       broadcast.broadcastMessage = (packet) => {
         stat.calls++;
         stat.bytes += packet?.data?.length || 0;
@@ -56,7 +67,7 @@ setInterval(() => {
         return orig(packet);
       };
       broadcast.__patched__ = true;
-      logger.verbose(`已挂钩 broadcast ${path}`);
+      logger.verbose(`已挂钩 broadcast ${streamPath}`);
     }
   }
   for (const session of NmsContext.sessions.values()) {
@@ -64,6 +75,7 @@ setInterval(() => {
       const origCb = session.rtmp.onPacketCallback;
       let pktCount = 0;
       let pktBytes = 0;
+      session.__origOnPacketCallback__ = origCb;
       session.rtmp.onPacketCallback = (packet) => {
         pktCount++;
         pktBytes += packet?.data?.length || 0;
@@ -79,27 +91,61 @@ setInterval(() => {
       logger.verbose(`已挂钩 rtmp 协议层 ${session.id}`);
     }
   }
-}, 200);
+}
 
-// 同时跟踪 publisher 实际吞吐（仅 verbose 模式输出）
-const inBytesLast = new Map();
-setInterval(() => {
-  for (const [path, broadcast] of NmsContext.broadcasts.entries()) {
+function reportDiag() {
+  for (const [streamPath, broadcast] of NmsContext.broadcasts.entries()) {
     const pub = broadcast.publisher;
     if (!pub) continue;
     const cur = pub.inBytes || 0;
     const last = inBytesLast.get(pub.id) || 0;
     const delta = cur - last;
-    inBytesLast.set(pub.id, cur);
-    const stat = broadcastStats.get(path) || { calls: 0, bytes: 0 };
+    inBytesLast.set(pub.id, delta ? cur : last);
+    const stat = broadcastStats.get(streamPath) || { calls: 0, bytes: 0 };
     const rtmpStats = pub.__getPktStats__ ? pub.__getPktStats__() : { count: '?', bytes: 0 };
     const r = pub.rtmp || {};
     const pp = r.parserPacket || {};
-    logger.debug(`[publisher] ${path}: socket入 ${(delta / 1024).toFixed(1)} KB, rtmp解析 ${rtmpStats.count} 包/${(rtmpStats.bytes / 1024).toFixed(1)} KB, 广播 ${stat.calls} 包/${(stat.bytes / 1024).toFixed(1)} KB | parserState=${r.parserState} inChunk=${r.inChunkSize} pkt(type=${pp.header?.type} len=${pp.header?.length} bytes=${pp.bytes})`);
+    logger.debug(`[publisher] ${streamPath}: socket入 ${(delta / 1024).toFixed(1)} KB, rtmp解析 ${rtmpStats.count} 包/${(rtmpStats.bytes / 1024).toFixed(1)} KB, 广播 ${stat.calls} 包/${(stat.bytes / 1024).toFixed(1)} KB | parserState=${r.parserState} inChunk=${r.inChunkSize} pkt(type=${pp.header?.type} len=${pp.header?.length} bytes=${pp.bytes})`);
     stat.calls = 0;
     stat.bytes = 0;
   }
-}, 5000);
+}
+
+function startDiagHooks() {
+  if (diagPatchTimer) return;
+  patchDiagHooks();
+  diagPatchTimer = setInterval(patchDiagHooks, 1000);
+  diagReportTimer = setInterval(reportDiag, 5000);
+}
+
+function stopDiagHooks() {
+  if (diagPatchTimer) clearInterval(diagPatchTimer);
+  if (diagReportTimer) clearInterval(diagReportTimer);
+  diagPatchTimer = null;
+  diagReportTimer = null;
+  broadcastStats.clear();
+  inBytesLast.clear();
+  // 还原被替换的方法，彻底从热路径上摘下钩子
+  for (const broadcast of NmsContext.broadcasts.values()) {
+    if (!broadcast.__patched__) continue;
+    if (broadcast.__origBroadcastMessage__) {
+      broadcast.broadcastMessage = broadcast.__origBroadcastMessage__;
+    }
+    broadcast.__patched__ = false;
+  }
+  for (const session of NmsContext.sessions.values()) {
+    if (!session.__patchedRtmp__) continue;
+    if (session.__origOnPacketCallback__ && session.rtmp) {
+      session.rtmp.onPacketCallback = session.__origOnPacketCallback__;
+    }
+    session.__patchedRtmp__ = false;
+  }
+}
+
+function syncDiagHooks() {
+  if (verboseLog) startDiagHooks();
+  else stopDiagHooks();
+}
 
 // node-media-server v4 配置
 const nmsConfig = {
@@ -127,10 +173,12 @@ const nmsConfig = {
 const nms = new NodeMediaServer(nmsConfig);
 
 // 低延迟：为每个新建的 BroadcastServer 重写 postPlay，跳过 GOP 缓存重放
+// （新订阅者从缓存 GOP 起点开始播，会白等一个 GOP 的时长）
 const patchBroadcastsLowLatency = () => {
-  for (const [path, broadcast] of NmsContext.broadcasts.entries()) {
+  for (const [streamPath, broadcast] of NmsContext.broadcasts.entries()) {
     if (broadcast.__lowLatencyPatched__) continue;
     const origPostPlay = broadcast.postPlay;
+    broadcast.__origPostPlay__ = origPostPlay;
     broadcast.postPlay = (session) => {
       const flvGop = broadcast.flvGopCache;
       const rtmpGop = broadcast.rtmpGopCache;
@@ -144,10 +192,11 @@ const patchBroadcastsLowLatency = () => {
       }
     };
     broadcast.__lowLatencyPatched__ = true;
-    logger.verbose(`[低延迟] 已禁用 ${path} 的 GOP 缓存重放`);
+    logger.verbose(`[低延迟] 已禁用 ${streamPath} 的 GOP 缓存重放`);
   }
 };
-setInterval(patchBroadcastsLowLatency, 200);
+// 定期兜底（新流上线时会立即补一次，见 postPublish）
+setInterval(patchBroadcastsLowLatency, 500);
 
 // Express 应用
 const app = express();
@@ -161,6 +210,11 @@ const io = socketIo(server, {
 
 const activeStreams = new Map();
 let selectedOutputStream = null;
+
+// 输出选择在断流后的保留期（毫秒）：期间同一路重新上线则自动续上
+const OUTPUT_RECONNECT_GRACE_MS = 30000;
+let outputClearTimer = null;
+let pendingOutputKey = null;
 
 // 音频状态：Map<streamKey, { volume, muted }>
 const audioState = {};
@@ -199,6 +253,15 @@ nms.on('postPublish', (session) => {
     status: 'online'
   });
 
+  // 新流上线：立刻给它的 BroadcastServer 打上低延迟补丁，再清掉可能待执行的输出取消
+  patchBroadcastsLowLatency();
+  if (outputClearTimer && pendingOutputKey === streamKey) {
+    clearTimeout(outputClearTimer);
+    outputClearTimer = null;
+    pendingOutputKey = null;
+    logger.info(`[输出] ${streamKey} 已重新上线，保留原有输出选择`);
+  }
+
   logger.verbose('活跃流:', Array.from(activeStreams.keys()));
   io.emit('streamUpdate', [...Array.from(activeStreams.values()), ...Array.from(localFiles.values())]);
 });
@@ -210,9 +273,23 @@ nms.on('donePublish', (session) => {
   const streamKey = streamPath.replace(/^\/+|\/+$/g, '');
   activeStreams.delete(streamKey);
 
+  // 断流不立刻取消输出：现场 RTMP 抖动、OBS 换场景重连都很常见，
+  // 若此时把输出清空，HDMI 那块屏会直接黑成「未选择输出画面」，得人工再点一次。
+  // 这里给一个宽限期，期间同一 streamKey 重新上线就自动续上；真下线了才清。
   if (selectedOutputStream === streamKey) {
-    selectedOutputStream = null;
-    io.emit('outputSelected', { streamKey: null });
+    if (outputClearTimer) clearTimeout(outputClearTimer);
+    pendingOutputKey = streamKey;
+    outputClearTimer = setTimeout(() => {
+      outputClearTimer = null;
+      const key = pendingOutputKey;
+      pendingOutputKey = null;
+      if (key && selectedOutputStream === key && !activeStreams.has(key)) {
+        selectedOutputStream = null;
+        logger.info(`[输出] ${key} 超过 ${OUTPUT_RECONNECT_GRACE_MS / 1000}s 未重新上线，取消输出选择`);
+        io.emit('outputSelected', { streamKey: null });
+      }
+    }, OUTPUT_RECONNECT_GRACE_MS);
+    logger.verbose(`[输出] ${streamKey} 已断流，保留输出选择 ${OUTPUT_RECONNECT_GRACE_MS / 1000}s 等待重连`);
   }
 
   io.emit('streamUpdate', [...Array.from(activeStreams.values()), ...Array.from(localFiles.values())]);
@@ -287,6 +364,7 @@ function mimeFromExt(ext) {
 
 const AUDIO_EXT_RE = /^(mp3|aac|wav|flac|m4a|ogg)$/i;
 const IMAGE_EXT_RE = /^(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i;
+const MEDIA_EXT_RE = /\.(mp4|mov|mkv|avi|webm|m4v|ts|flv|wmv|mp3|aac|wav|flac|m4a|ogg|png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i;
 
 function detectLocalFileType(ext) {
   if (AUDIO_EXT_RE.test(ext)) return 'audio';
@@ -294,15 +372,44 @@ function detectLocalFileType(ext) {
   return 'video';
 }
 
+/**
+ * 校验并规范化一个本地文件路径。
+ *
+ * 这个接口以前接受任意 filePath，配合全开 CORS + 无鉴权，等于给本机开了个任意文件读取口
+ * （传 "C:\\Windows\\...\\xxx" 或 "/etc/passwd" 都能被 /api/local/stream 读出来）。
+ * 现在至少要求：必须是存在的普通文件，且扩展名属于受支持的媒体类型。
+ * 注意这仍不是白名单目录校验，只挡住非媒体文件与目录。
+ */
+function resolveLocalMediaPath(rawPath) {
+  if (typeof rawPath !== 'string' || !rawPath.trim()) {
+    return { error: 'filePath required' };
+  }
+  const resolved = path.resolve(rawPath.trim());
+  if (!MEDIA_EXT_RE.test(resolved)) {
+    return { error: '不支持的媒体扩展名' };
+  }
+  let stat;
+  try {
+    stat = fs.statSync(resolved);
+  } catch {
+    return { error: '文件不存在或无法访问' };
+  }
+  if (!stat.isFile()) return { error: '目标不是文件' };
+  return { resolved, size: stat.size };
+}
+
 // 注册本地文件为虚拟流
 app.post('/api/local/add', (req, res) => {
   const { filePath, fileName } = req.body;
-  if (!filePath) return res.status(400).json({ error: 'filePath required' });
-  const ext = filePath.split('.').pop() || '';
+  const checked = resolveLocalMediaPath(filePath);
+  if (checked.error) return res.status(400).json({ error: checked.error });
+
+  const ext = checked.resolved.split('.').pop() || '';
   const fileType = detectLocalFileType(ext);
-  const key = 'local/' + fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const displayName = String(fileName || path.basename(checked.resolved));
+  const key = 'local/' + displayName.replace(/[^a-zA-Z0-9._-]/g, '_');
   localFiles.set(key, {
-    streamKey: key, filePath, fileName, fileType,
+    streamKey: key, filePath: checked.resolved, fileName: displayName, fileType,
     startTime: new Date(), status: 'online', type: 'local',
     // 播放设置默认值
     loop: false,
@@ -342,28 +449,35 @@ app.get('/api/local/stream/:key(*)', (req, res) => {
   const key = req.params.key;
   const item = localFiles.get('local/' + key) || localFiles.get(key);
   if (!item) return res.status(404).json({ error: 'not found' });
-  const { filePath, fileName } = item;
+  const { filePath } = item;
   const ext = filePath.split('.').pop() || '';
   const mime = mimeFromExt(ext);
-  let stat;
-  try { stat = require('fs').statSync(filePath); } catch { return res.status(404).json({ error: 'file not found' }); }
-  const total = stat.size;
+
+  // 只提供注册时校验过的路径：重新 stat 一次，顺带防止文件在注册后被替换成目录
+  const checked = resolveLocalMediaPath(filePath);
+  if (checked.error) return res.status(404).json({ error: checked.error });
+
+  const total = checked.size;
   const range = req.headers.range;
   if (range) {
     const [, startStr, endStr] = /bytes=(\d+)-(\d*)/.exec(range) || [];
     const start = parseInt(startStr, 10);
     const end = endStr ? parseInt(endStr, 10) : total - 1;
-    const chunkSize = end - start + 1;
+    if (!Number.isFinite(start) || start < 0 || start >= total) {
+      return res.status(416).json({ error: 'range not satisfiable' });
+    }
+    const safeEnd = Math.min(Number.isFinite(end) ? end : total - 1, total - 1);
+    const chunkSize = safeEnd - start + 1;
     res.writeHead(206, {
-      'Content-Range': `bytes ${start}-${end}/${total}`,
+      'Content-Range': `bytes ${start}-${safeEnd}/${total}`,
       'Accept-Ranges': 'bytes',
       'Content-Length': chunkSize,
       'Content-Type': mime,
     });
-    require('fs').createReadStream(filePath, { start, end }).pipe(res);
+    fs.createReadStream(filePath, { start, end: safeEnd }).pipe(res);
   } else {
     res.writeHead(200, { 'Content-Length': total, 'Content-Type': mime, 'Accept-Ranges': 'bytes' });
-    require('fs').createReadStream(filePath).pipe(res);
+    fs.createReadStream(filePath).pipe(res);
   }
 });
 
@@ -438,6 +552,7 @@ io.on('connection', (socket) => {
 
 // 启动服务器
 nms.run();
+if (verboseLog) startDiagHooks();
 server.listen(3001, () => {
   const lanIp = getLanIp();
   logger.info('=================================');

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { getOutputAudio, setOutputAudio } from '../config.js';
 
 function HdmiOutputPanel() {
   const api = typeof window !== 'undefined' ? window.electronAPI : null;
   const [displays, setDisplays] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [outputOpen, setOutputOpen] = useState(false);
+  const [withAudio, setWithAudio] = useState(() => getOutputAudio());
 
   const refresh = async () => {
     if (!api) return;
@@ -36,8 +38,13 @@ function HdmiOutputPanel() {
     );
   }
 
-  const handleOpen = async () => { await api.openOutput(selectedId); setOutputOpen(true); };
+  const handleOpen = async () => { await api.openOutput(selectedId, { withAudio }); setOutputOpen(true); };
   const handleClose = async () => { await api.closeOutput(); setOutputOpen(false); };
+
+  const toggleAudio = (e) => {
+    setWithAudio(e.target.checked);
+    setOutputAudio(e.target.checked);
+  };
 
   return (
     <div className="hdmi-panel">
@@ -64,6 +71,10 @@ function HdmiOutputPanel() {
               <button className="hdmi-btn danger" onClick={handleClose}>■ 关闭输出</button>
             )}
           </div>
+          <label className="hdmi-audio-row" title="开启后输出窗口自行播放音频，请在混音台静音该路以免叠音">
+            <input type="checkbox" checked={withAudio} onChange={toggleAudio} />
+            <span>输出带声音</span>
+          </label>
           <p className="hint">
             {outputOpen ? '输出窗口已在选中显示器上全屏运行' : '将在选中显示器上全屏播放当前主输出'}
           </p>
